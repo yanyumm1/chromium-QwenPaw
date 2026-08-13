@@ -388,10 +388,26 @@ done
 rm -f /tmp/.X\${VNC_DISPLAY#:}-lock 2>/dev/null || true
 x11vnc -display "\${VNC_DISPLAY}" -forever -shared -rfbport \${RFB_PORT} -nopw -noxdamage -repeat -listen 0.0.0.0 -geometry ${RESOLUTION} -pointer_mode 1 -wait 5 -defer 5 > "\${LOG_DIR}/x11vnc.log" 2>&1 &
 X11_PID=\$!
+# 生成自适应入口页: 根路径 / 自动跳转 vnc_auto.html?resize=scale (任何设备自动缩放填满窗口)
+cat > /usr/share/novnc/index.html <<'INDEXEOF'
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VNC Browser</title>
+<script>
+// 自动跳转到 vnc_auto.html 并带 resize=scale (本地缩放) + autoconnect
+var base = location.pathname.replace(/index\.html$/, '');
+var target = base + 'vnc_auto.html?autoconnect=1&resize=scale';
+if (location.search) target += '&' + location.search.replace(/^\?/, '');
+location.replace(target);
+</script></head><body>
+<p>Redirecting to <a href="vnc_auto.html?autoconnect=1&amp;resize=scale">VNC Browser (auto scale)...</a></p>
+</body></html>
+INDEXEOF
 websockify --web /usr/share/novnc \${VNC_PORT} localhost:\${RFB_PORT} > "\${LOG_DIR}/novnc.log" 2>&1 &
 WEB_PID=\$!
 sleep 2
-echo "✅ noVNC: http://localhost:\${VNC_PORT}/vnc.html"
+echo "✅ noVNC: http://localhost:\${VNC_PORT}/ (自适应缩放) 或 /vnc.html?resize=scale"
 wait -n "\${X11_PID}" "\${WEB_PID}" 2>/dev/null || wait "\${X11_PID}" "\${WEB_PID}"
 EOF
 
