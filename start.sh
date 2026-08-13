@@ -17,7 +17,7 @@ export RESOLUTION=${RESOLUTION:-"720x1280"}
 export GBACKUP_USER=${GBACKUP_USER:-""}
 export GBACKUP_REPO=${GBACKUP_REPO:-""}
 export GBACKUP_TOKEN=${GBACKUP_TOKEN:-""}
-export BACKUP_DIR="./firefox-backup"
+export BACKUP_DIR="./chromium-backup"
 export AUTO_BACKUP=${AUTO_BACKUP:-"NO"}
 export AUTO_RESTORE=${AUTO_RESTORE:-"NO"}
 export INTERVALINSECONDS=${INTERVALINSECONDS:-"1800"} # 30分钟
@@ -37,15 +37,15 @@ VNC_WIDTH="${RES[0]}"
 VNC_HEIGHT="${RES[1]}"
 VNC_DEPTH="24"
 
-# 计算Firefox窗口大小（全屏）
-FIREFOX_WIDTH=$VNC_WIDTH
-FIREFOX_HEIGHT=$VNC_HEIGHT
+# 计算Chromium窗口大小（全屏）
+CHROMIUM_WIDTH=$VNC_WIDTH
+CHROMIUM_HEIGHT=$VNC_HEIGHT
 
-# 创建Firefox配置文件
-mkdir -p ~/.mozilla/firefox
+# 创建Chromium配置文件
+mkdir -p ~/.config/chromium
 
 # GitHub备份/还原功能
-backup_restore_firefox() {
+backup_restore_chromium() {
     local action=$1
 
     # 检查GitHub配置是否完整
@@ -56,20 +56,20 @@ backup_restore_firefox() {
     fi
 
     local repo_url="https://${GBACKUP_TOKEN}@github.com/${GBACKUP_USER}/${GBACKUP_REPO}.git"
-    local profile_dir="$HOME/.mozilla/firefox"
+    local profile_dir="$HOME/.config/chromium"
 
     case $action in
         "backup")
-            echo "开始备份Firefox配置到GitHub..."
+            echo "开始备份Chromium配置到GitHub..."
             echo "仓库: ${GBACKUP_USER}/${GBACKUP_REPO}"
 
             if [ -d "$profile_dir" ]; then
                 # 创建备份目录
-                mkdir -p "$BACKUP_DIR/firefox-profile"
+                mkdir -p "$BACKUP_DIR/chromium-profile"
 
                 # 复制配置文件到备份目录
                 rsync -av --delete --exclude='Cache' --exclude='cache2' --exclude='thumbnails' \
-                    "$profile_dir/" "$BACKUP_DIR/firefox-profile/" >/dev/null 2>&1
+                    "$profile_dir/" "$BACKUP_DIR/chromium-profile/" >/dev/null 2>&1
 
                 # 添加备份信息文件
                 echo "备份时间: $(date '+%Y-%m-%d %H:%M:%S')" > "$BACKUP_DIR/README.md"
@@ -85,8 +85,8 @@ backup_restore_firefox() {
                     echo "初始化Git仓库..."
                     git init >/dev/null
                     # 设置Git用户信息
-                    git config user.email "firefox-backup@docker.container" >/dev/null
-                    git config user.name "Firefox Backup Bot" >/dev/null
+                    git config user.email "chromium-backup@docker.container" >/dev/null
+                    git config user.name "Chromium Backup Bot" >/dev/null
                     # 设置默认分支为main
                     git config init.defaultBranch main >/dev/null 2>&1
 
@@ -102,8 +102,8 @@ backup_restore_firefox() {
                     echo "✅ 本地Git仓库初始化完成"
                 else
                     # 确保用户信息正确设置
-                    git config user.email "firefox-backup@docker.container" >/dev/null
-                    git config user.name "Firefox Backup Bot" >/dev/null
+                    git config user.email "chromium-backup@docker.container" >/dev/null
+                    git config user.name "Chromium Backup Bot" >/dev/null
                 fi
 
                 # 设置远程仓库URL
@@ -121,7 +121,7 @@ backup_restore_firefox() {
 
                 # 检查是否有更改需要提交
                 if ! git diff --staged --quiet; then
-                    if git commit -m "Firefox备份 $(date '+%Y-%m-%d %H:%M:%S')" >/dev/null 2>&1; then
+                    if git commit -m "Chromium备份 $(date '+%Y-%m-%d %H:%M:%S')" >/dev/null 2>&1; then
                         echo "✅ 提交创建成功"
                     else
                         echo "❌ 提交创建失败"
@@ -146,7 +146,7 @@ backup_restore_firefox() {
                         fi
                     fi
 
-                    echo "📦 备份大小: $(du -sh firefox-profile | cut -f1)"
+                    echo "📦 备份大小: $(du -sh chromium-profile | cut -f1)"
                 else
                     echo "⚠ 没有检测到文件更改，跳过提交"
                 fi
@@ -156,11 +156,11 @@ backup_restore_firefox() {
                 cd - > /dev/null
 
             else
-                echo "⚠ Firefox配置文件目录不存在，跳过备份"
+                echo "⚠ Chromium配置文件目录不存在，跳过备份"
             fi
             ;;
         "restore")
-            echo "尝试从GitHub恢复Firefox配置..."
+            echo "尝试从GitHub恢复Chromium配置..."
             echo "仓库: ${GBACKUP_USER}/${GBACKUP_REPO}"
             echo "分支: main"
 
@@ -179,8 +179,8 @@ backup_restore_firefox() {
                 # 如果克隆失败，尝试其他方法
                 echo "⚠ 从main分支克隆失败，尝试其他方法..."
                 git init >/dev/null
-                git config user.email "firefox-backup@docker.container" >/dev/null
-                git config user.name "Firefox Backup Bot" >/dev/null
+                git config user.email "chromium-backup@docker.container" >/dev/null
+                git config user.name "Chromium Backup Bot" >/dev/null
                 git remote add origin "$repo_url" >/dev/null
 
                 # 只获取main分支
@@ -204,17 +204,17 @@ backup_restore_firefox() {
             # 返回原目录
             cd - > /dev/null
 
-            if [ -d "$BACKUP_DIR/firefox-profile" ]; then
+            if [ -d "$BACKUP_DIR/chromium-profile" ]; then
                 rm -rf "$profile_dir"
 
                 # 恢复配置
                 mkdir -p "$(dirname "$profile_dir")"
-                rsync -av "$BACKUP_DIR/firefox-profile/" "$profile_dir/" >/dev/null 2>&1
+                rsync -av "$BACKUP_DIR/chromium-profile/" "$profile_dir/" >/dev/null 2>&1
 
                 # 设置正确的权限
                 chown -R vncuser:vncuser "$profile_dir" 2>/dev/null || true
 
-                echo "✅ Firefox配置已从GitHub main分支恢复"
+                echo "✅ Chromium配置已从GitHub main分支恢复"
                 if [ -f "$BACKUP_DIR/backup-info.txt" ]; then
                     echo "📅 备份信息:"
                     cat "$BACKUP_DIR/backup-info.txt"
@@ -234,20 +234,20 @@ backup_restore_firefox() {
 # 如果提供了参数，执行相应操作后退出
 case "${1:-}" in
     "backup")
-        backup_restore_firefox "backup"
+        backup_restore_chromium "backup"
         exit 0
         ;;
     "restore")
-        backup_restore_firefox "restore"
+        backup_restore_chromium "restore"
         exit 0
         ;;
     "help")
-        echo "🔥 Firefox VNC容器备份工具"
+        echo "🔥 Chromium VNC容器备份工具"
         echo "用法: ./start.sh [command]"
         echo ""
         echo "命令:"
-        echo "  backup    - 备份Firefox配置到GitHub"
-        echo "  restore   - 从GitHub恢复Firefox配置"
+        echo "  backup    - 备份Chromium配置到GitHub"
+        echo "  restore   - 从GitHub恢复Chromium配置"
         echo "  help      - 显示帮助信息"
         echo ""
         echo "环境变量:"
@@ -263,7 +263,7 @@ case "${1:-}" in
 esac
 
 # 以下是正常的VNC启动流程
-echo "🚀 启动Firefox VNC服务..."
+echo "🚀 启动Chromium VNC服务..."
 echo "📊 设置分辨率: ${RESOLUTION}"
 
 # 创建必要的目录
@@ -282,7 +282,7 @@ rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
 case "$AUTO_RESTORE" in
   "YES" )
     if [ -n "$GBACKUP_USER" ] && [ -n "$GBACKUP_REPO" ] && [ -n "$GBACKUP_TOKEN" ]; then
-      backup_restore_firefox "restore"
+      backup_restore_chromium "restore"
     fi
     ;;
   "NO" )
@@ -310,18 +310,18 @@ export DISPLAY=:0
 # 等待X服务器完全启动
 sleep 2
 
-# 启动Firefox
-echo "启动Firefox (${FIREFOX_WIDTH}x${FIREFOX_HEIGHT})..."
-firefox --no-remote --width=$FIREFOX_WIDTH --height=$FIREFOX_HEIGHT > /tmp/firefox.log 2>&1 &
+# 启动Chromium
+echo "启动Chromium (${CHROMIUM_WIDTH}x${CHROMIUM_HEIGHT})..."
+chromium --window-size=$CHROMIUM_WIDTH,$CHROMIUM_HEIGHT --start-fullscreen > /tmp/chromium.log 2>&1 &
 
-# 等待Firefox启动
-echo "等待Firefox启动..."
+# 等待Chromium启动
+echo "等待Chromium启动..."
 sleep 8
 
-# 检查Firefox是否正常运行
-if ! ps aux | grep firefox | grep -v grep > /dev/null; then
-    echo "⚠ Firefox启动失败，尝试重新启动..."
-    firefox --no-remote --width=$FIREFOX_WIDTH --height=$FIREFOX_HEIGHT > /tmp/firefox.log 2>&1 &
+# 检查Chromium是否正常运行
+if ! ps aux | grep chromium | grep -v grep > /dev/null; then
+    echo "⚠ Chromium启动失败，尝试重新启动..."
+    chromium --window-size=$CHROMIUM_WIDTH,$CHROMIUM_HEIGHT --start-fullscreen > /tmp/chromium.log 2>&1 &
     sleep 5
 fi
 
@@ -372,7 +372,7 @@ echo "========================================"
 
 # 检查进程状态
 echo "检查进程状态:"
-ps aux | grep -E '(Xvfb|firefox|x11vnc|websockify)' | grep -v grep
+ps aux | grep -E '(Xvfb|chromium|x11vnc|websockify)' | grep -v grep
 
 # 设置定时备份（每30分钟备份一次）
 case "$AUTO_BACKUP" in
@@ -382,7 +382,7 @@ case "$AUTO_BACKUP" in
     while true; do
       sleep 1800  # 30分钟
       echo "⏰ 执行定时备份..."
-      backup_restore_firefox "backup"
+      backup_restore_chromium "backup"
     done &
     ;;
   "NO" )

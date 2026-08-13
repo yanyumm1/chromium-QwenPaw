@@ -1,14 +1,14 @@
-# Auto Firefox (Sap-FireFox-QwenPaw)
+# Auto Chromium (chromium-QwenPaw)
 
-云端 Firefox 浏览器（VNC + noVNC），支持 Cloudflare Tunnel 隧道访问。
+云端 Chromium 浏览器（VNC + noVNC），支持 Cloudflare Tunnel 隧道访问。
 改造自 SAP Cloud Foundry 部署方案，借鉴 [komari-argo-hug](https://github.com/pingmike2/komari-argo-hug) 的隧道机制。
 
 ## ✨ 功能
 
-- 🦊 Firefox 浏览器 + xfce 桌面
+- 🌐 Chromium 浏览器 + xfce 桌面
 - 🖥️ noVNC 网页访问（浏览器打开即用）
 - 🌐 Cloudflare Tunnel 隧道（动态库模式，无需官方二进制）
-- 💾 GitHub 备份/还原 Firefox 配置（可选）
+- 💾 GitHub 备份/还原 Chromium 配置（可选）
 - 📊 哪吒监控（可选）
 
 ## 🚀 快速开始
@@ -32,17 +32,17 @@ cp .env.example .env
 ### 2. 构建镜像
 
 ```bash
-docker build -t firefox-vnc .
+docker build -t chromium-vnc .
 ```
 
 ### 3. 运行
 
 ```bash
 docker run -d \
-  --name firefox-vnc \
+  --name chromium-vnc \
   -p 8080:8080 \
   --env-file .env \
-  firefox-vnc
+  chromium-vnc
 ```
 
 访问 `http://localhost:8080/vnc.html`，密码 `VNC_PASSWORD`。
@@ -64,7 +64,7 @@ URL: localhost:8080
 - 可通过 `CLOUDFLARED_LIB_URL` 环境变量覆盖下载地址
 - 支持 amd64 / arm64 / freebsd 自动适配
 
-## 💾 Firefox 配置备份（可选）
+## 💾 Chromium 配置备份（可选）
 
 设置以下环境变量启用 GitHub 备份：
 

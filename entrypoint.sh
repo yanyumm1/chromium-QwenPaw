@@ -8,7 +8,7 @@ set -e
 error() { echo -e "\033[31m\033[01m$*\033[0m" && exit 1; }
 info() { echo -e "\033[32m\033[01m$*\033[0m"; }
 
-echo "=== Sap-FireFox-QwenPaw entrypoint ==="
+echo "=== chromium-QwenPaw entrypoint ==="
 
 # 1. 加载 .env (如果存在)
 if [ -f /app/.env ]; then
