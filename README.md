@@ -6,44 +6,68 @@
 
 ---
 
-## 🚀 一键部署 QwenPaw（frp + Chromium 组合）
+## 🚀 一键还原 QwenPaw（frp + Chromium 组合）
 
-本仓库提供 `deploy/` 一键部署模板，把 **QwenPaw（AI 助手）+ Chromium 浏览器桌面** 通过 frp 隧道暴露到公网，支持手机/电脑远程操作。
+本仓库提供 `deploy/` 一键还原模板，把 **QwenPaw（AI 助手）+ Chromium 浏览器桌面** 通过 frp 隧道暴露到公网，支持手机/电脑远程操作。适合在任意一台 qwenpaw 机器上快速还原环境。
 
-### 使用步骤
+### 使用步骤（两步）
+
+**第 1 步：在你的 VPS 公网服务器上装 FRP 服务端**
+
+```bash
+bash <(curl -Ls https://main.ssss.nyc.mn/frp.sh)
+```
+
+按菜单选 **1 安装 FRP 服务端 (公网服务器)**，脚本会输出：
+- `监听IP`（服务器公网 IP）
+- `监听端口`（默认 `7000`）
+- `认证TOKEN`（随机生成的一串）
+
+**记下这几个值**，等下填进模板。
+
+**第 2 步：在任意 qwenpaw 机器上一键还原**
 
 ```bash
 # 1. 进入 deploy 目录
 cd deploy
 
-# 2. 复制配置模板并填写你的值
+# 2. 复制配置模板并填写 (填第1步拿到的值)
 cp config.env.example config.env
 vim config.env   # 填 FRP_SERVER_IP / FRP_TOKEN / 各端口 / VNC密码
 
-# 3. 一键部署
-bash deploy.sh
+# 3. 一键还原
+bash restore.sh
 ```
 
 ### config.env 需要填写什么
 
-| 配置项 | 说明 | 示例 |
+| 配置项 | 来源 | 说明 |
 |--------|------|------|
-| `FRP_SERVER_IP` | frp 服务端公网 IP | `YOUR_FRP_SERVER_IP` |
-| `FRP_SERVER_PORT` | frp 服务端通信端口 | `7000` |
-| `FRP_TOKEN` | 与服务端一致的认证 token | `YOUR_FRP_TOKEN` |
-| `FRP_SSH_REMOTE_PORT` | SSH 公网映射端口 | `YOUR_SSH_REMOTE_PORT` |
-| `FRP_VNC_REMOTE_PORT` | noVNC 公网端口（vnc.html） | `YOUR_VNC_REMOTE_PORT` |
-| `FRP_APP_REMOTE_PORT` | QwenPaw 面板公网端口（可选） | `YOUR_APP_REMOTE_PORT` |
-| `VNC_PASSWORD` | noVNC 访问密码 | `YOUR_VNC_PASSWORD` |
-| `RESOLUTION` | 桌面分辨率 | `720x1280` |
+| `FRP_SERVER_IP` | frp.sh 输出的「监听IP」 | frp 服务端公网 IP |
+| `FRP_SERVER_PORT` | frp.sh 输出的「监听端口」 | 默认 `7000` |
+| `FRP_TOKEN` | frp.sh 输出的「认证TOKEN」 | 与服务端一致的 token |
+| `FRP_SSH_REMOTE_PORT` | 自己定 | SSH 公网映射端口 |
+| `FRP_VNC_REMOTE_PORT` | 自己定 | noVNC 公网端口（vnc.html） |
+| `FRP_APP_REMOTE_PORT` | 自己定（可选） | QwenPaw 面板公网端口 |
+| `VNC_PASSWORD` | 自己定 | noVNC 访问密码 |
+| `RESOLUTION` | 自己定 | 桌面分辨率（默认 `720x1280`） |
+| `NAS_BASE_DIR` | 自动检测 | 数据持久化目录 |
+| `BACKUP_INTERVAL` | 自己定 | 定时备份间隔（默认 1800s） |
 
-### 部署完成后
+### 还原完成后
 
 ```
 🌐 noVNC 浏览器: http://FRP_SERVER_IP:FRP_VNC_REMOTE_PORT/vnc.html
 🌐 QwenPaw 面板: http://FRP_SERVER_IP:FRP_APP_REMOTE_PORT
 🔑 SSH:          ssh -p FRP_SSH_REMOTE_PORT root@FRP_SERVER_IP
 ```
+
+### ✨ 自带能力
+
+- **开机自启**：所有服务由 supervisor 托管（`autostart=true`），容器/机器重启自动拉起
+- **数据定时存 NAS**：qwenpaw 数据（config/聊天记录）+ chromium 配置每 `BACKUP_INTERVAL` 秒同步到 NAS
+- **重启自动恢复**：启动时检查 NAS，有备份就自动恢复到本地，qwenpaw 和浏览器数据都不丢
+- **幂等**：restore.sh 可重复执行，不会重复添加配置
 
 > 原理同下方架构：frpc 把本地 8080(noVNC)/8088(qwenpaw)/22(ssh) 映射到公网，supervisor 托管 chromium 桌面 + qwenpaw 进程。
 

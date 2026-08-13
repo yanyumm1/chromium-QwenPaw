@@ -1,10 +1,11 @@
 #!/bin/bash
 # chromium-gui.sh - 在 DISPLAY :1 (xfce4 桌面) 上启动带窗口的 chromium
 # 数据持久化到 NAS, supervisor 托管, 借鉴 chrome.sh 的启动参数
+# NAS 目录可用环境变量 CHROMIUM_PROFILE_DIR 覆盖 (restore.sh 部署时写入)
 set -u
 
-# NAS 持久化目录 (软链方式, 容器重启不丢)
-NAS_DIR="/run/csi/mount-root/nas/4079184d856ecc166ed19d4887083405/workspaces/default/browser/chromium-gui-profile"
+# NAS 持久化目录 (默认值; restore.sh 会用实际 NAS 路径覆盖此文件)
+NAS_DIR="${CHROMIUM_PROFILE_DIR:-/run/csi/mount-root/nas/4079184d856ecc166ed19d4887083405/workspaces/default/browser/chromium-gui-profile}"
 mkdir -p "$NAS_DIR"
 
 # 等待 DISPLAY :1 就绪
