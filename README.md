@@ -6,6 +6,49 @@
 
 ---
 
+## 🚀 一键部署 QwenPaw（frp + Chromium 组合）
+
+本仓库提供 `deploy/` 一键部署模板，把 **QwenPaw（AI 助手）+ Chromium 浏览器桌面** 通过 frp 隧道暴露到公网，支持手机/电脑远程操作。
+
+### 使用步骤
+
+```bash
+# 1. 进入 deploy 目录
+cd deploy
+
+# 2. 复制配置模板并填写你的值
+cp config.env.example config.env
+vim config.env   # 填 FRP_SERVER_IP / FRP_TOKEN / 各端口 / VNC密码
+
+# 3. 一键部署
+bash deploy.sh
+```
+
+### config.env 需要填写什么
+
+| 配置项 | 说明 | 示例 |
+|--------|------|------|
+| `FRP_SERVER_IP` | frp 服务端公网 IP | `YOUR_FRP_SERVER_IP` |
+| `FRP_SERVER_PORT` | frp 服务端通信端口 | `7000` |
+| `FRP_TOKEN` | 与服务端一致的认证 token | `YOUR_FRP_TOKEN` |
+| `FRP_SSH_REMOTE_PORT` | SSH 公网映射端口 | `YOUR_SSH_REMOTE_PORT` |
+| `FRP_VNC_REMOTE_PORT` | noVNC 公网端口（vnc.html） | `YOUR_VNC_REMOTE_PORT` |
+| `FRP_APP_REMOTE_PORT` | QwenPaw 面板公网端口（可选） | `YOUR_APP_REMOTE_PORT` |
+| `VNC_PASSWORD` | noVNC 访问密码 | `YOUR_VNC_PASSWORD` |
+| `RESOLUTION` | 桌面分辨率 | `720x1280` |
+
+### 部署完成后
+
+```
+🌐 noVNC 浏览器: http://FRP_SERVER_IP:FRP_VNC_REMOTE_PORT/vnc.html
+🌐 QwenPaw 面板: http://FRP_SERVER_IP:FRP_APP_REMOTE_PORT
+🔑 SSH:          ssh -p FRP_SSH_REMOTE_PORT root@FRP_SERVER_IP
+```
+
+> 原理同下方架构：frpc 把本地 8080(noVNC)/8088(qwenpaw)/22(ssh) 映射到公网，supervisor 托管 chromium 桌面 + qwenpaw 进程。
+
+---
+
 ## 🏗️ 架构总览
 
 ```
