@@ -22,6 +22,11 @@
 #   -r, --resolution <RxR>  桌面分辨率 (默认 720x1280)
 #   -h, --help              显示帮助
 #
+# 环境变量扩展 (CDP_HEADED / CDP_START_URL):
+#   CDP_HEADED=1   chromium-cdp 有头模式 (默认): AI 浏览器显示在 VNC, 人机同屏
+#   CDP_HEADED=0   chromium-cdp 无头模式: 省内存, VNC 桌面显示独立 chromium-gui
+#   CDP_START_URL=...  有头模式的启动页 (默认 Tampermonkey 扩展商店)
+#
 # 示例:
 #   bash install.sh -s 1.2.3.4 -t abc123 -q 10000
 #   bash install.sh -s 1.2.3.4 -t abc123 -q 10000 -v 20000 -S 20022 -r 1280x720
@@ -62,6 +67,8 @@ VNC_PASS="${VNC_PASS:-browser123}"               # VNC 密码 (明文, x11vnc -p
 QWENPAW_PORT="${QWENPAW_PORT:-8088}"             # 本地 qwenpaw app 端口
 BACKUP_INTERVAL="${BACKUP_INTERVAL:-1800}"       # 数据备份间隔(秒), 默认 30 分钟
 CDP_PORT="${CDP_PORT:-9222}"                     # chromium CDP 调试端口 (browser_use 用)
+CDP_HEADED="${CDP_HEADED:-1}"                    # 1=有头模式(VNC可见,默认开) 0=无头模式(省内存)
+CDP_START_URL="${CDP_START_URL:-https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo}"  # chromium-cdp 启动页
 
 # 命令行参数解析
 while [ $# -gt 0 ]; do
@@ -159,6 +166,19 @@ check_cdp() {
         red "❌ 未找到 chromium, 请先安装 (apt install chromium)"
         exit 1
     fi
+
+    # chromium-cdp 启动命令 (有头/无头二选一)
+    #   有头 (CDP_HEADED=1): 显示在 VNC 桌面, 能直接看到 AI 在浏览器里干什么
+    #   无头 (CDP_HEADED=0): 后台运行, 省内存, 适合纯自动化不关心界面
+    if [ "${CDP_HEADED:-1}" = "1" ]; then
+        CDP_CMD="${CHROMIUM_BIN} --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/chromium-cdp-profile --window-size=${RESOLUTION} ${CDP_START_URL}"
+        CDP_ENV='environment=DISPLAY=":1"'
+        CDP_GUI_AUTOSTART=false   # cdp 有头已占 VNC 桌面, 不再自动起独立的 chromium-gui
+    else
+        CDP_CMD="${CHROMIUM_BIN} --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/chromium-cdp-profile about:blank"
+        CDP_ENV=""
+        CDP_GUI_AUTOSTART=true    # cdp 无头时, VNC 桌面显示独立 chromium-gui (Bing)
+    fi
     green "✅ chromium: $CHROMIUM_BIN"
 
     cdp_ok() {
@@ -207,7 +227,8 @@ EOF
             cat >> "$SUP_CONF" <<EOF
 
 [program:chromium-cdp]
-command=${CHROMIUM_BIN} --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/chromium-cdp-profile about:blank
+command=${CDP_CMD}
+${CDP_ENV}
 autostart=true
 autorestart=true
 priority=60
@@ -227,7 +248,7 @@ EOF
             green "✅ chromium CDP 修复成功 (端口 ${CDP_PORT})"
         else
             yellow "⚠ supervisor 启动失败, 手动启动兜底..."
-            nohup "$CHROMIUM_BIN" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/chromium-cdp-profile about:blank \
+            nohup $CDP_CMD \
                 >/var/log/chromium-cdp.out.log 2>&1 &
             sleep 3
             if cdp_ok; then
@@ -506,7 +527,7 @@ stderr_logfile=/var/log/vnc-browser.err.log
 stdout_logfile=/var/log/vnc-browser.out.log"
 
     append_program chromium-gui "command=${VNC_DIR}/chromium-gui.sh
-autostart=true
+autostart=${CDP_GUI_AUTOSTART}
 autorestart=true
 priority=65
 startsecs=10

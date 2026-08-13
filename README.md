@@ -236,6 +236,8 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 | — | `QWENPAW_PORT` | `8088` | 本地 qwenpaw app 端口 |
 | — | `BACKUP_INTERVAL` | `1800` | 数据备份间隔（秒） |
 | — | `CDP_PORT` | `9222` | chromium CDP 调试端口 |
+| — | `CDP_HEADED` | `1` | chromium-cdp 模式：`1`=有头（VNC 可见，人机同屏）`0`=无头（省内存） |
+| — | `CDP_START_URL` | Tampermonkey 商店 | chromium-cdp 有头模式的启动页 |
 
 ---
 
@@ -261,14 +263,16 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 
 所有进程由 **supervisor** 托管，开机自启、崩溃自动拉起。qwenpaw 数据每 30 分钟自动备份到 NAS，重启自动恢复。
 
-**两个浏览器各司其职：**
+**浏览器架构（v2 有头合一模式，默认）：**
 
 | 浏览器 | 端口 | 用途 | 模式 |
 |--------|------|------|------|
-| `chromium-gui` | Xvfb 虚拟屏 | 你在 noVNC 里看到/操作的全屏浏览器，数据存 NAS | 有头（可视化） |
-| `chromium-cdp` | `9222` | QwenPaw 里 browser_use 自动化用的调试浏览器 | 无头 headless |
+| `chromium-cdp` | `9222` | QwenPaw 里 browser_use 自动化用的调试浏览器，**同时显示在 noVNC 桌面**——AI 在浏览器里做什么，你实时看得到 | 有头（可视化，默认） |
+| `chromium-gui` | Xvfb 虚拟屏 | 独立展示浏览器（Bing 首页），仅当 `CDP_HEADED=0` 时才自动启动 | 有头（可选） |
 
-> 💡 两者独立：你在 noVNC 里手动点的页面，和 AI 自动化打开的页面互不干扰。
+> ✨ **v2 核心体验**：默认 `CDP_HEADED=1`，AI 自动化用的 chromium 直接以**完整浏览器界面**（标签栏+地址栏）显示在 VNC 桌面上，启动页默认 **Tampermonkey 扩展商店**（可 `CDP_START_URL` 自定义）。你在 noVNC 里看到的，就是 AI 正在操作的同一个浏览器——**人机同屏**，AI 点哪你都能看到。
+>
+> 💡 想省内存纯后台自动化？`CDP_HEADED=0 bash install.sh ...` 切回无头模式，VNC 桌面显示独立的 chromium-gui。
 
 ---
 
