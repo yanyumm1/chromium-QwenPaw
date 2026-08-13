@@ -121,11 +121,32 @@ bash install.sh -s 你的IP -t 你的TOKEN -q 10000
 
 ```
 🌐 QwenPaw 面板: http://FRP_SERVER_IP:QWENPAW_REMOTE_PORT
-🖥  noVNC 浏览器: http://FRP_SERVER_IP:FRP_VNC_REMOTE_PORT/   (配了 FRP_VNC_REMOTE_PORT 才有, 自适应缩放)
+🖥  noVNC 浏览器: http://FRP_SERVER_IP:FRP_VNC_REMOTE_PORT/vnc.html   (配了 FRP_VNC_REMOTE_PORT 才有, 自适应缩放)
 🔑 SSH:          ssh -p FRP_SSH_REMOTE_PORT root@FRP_SERVER_IP (配了 FRP_SSH_REMOTE_PORT 才有)
 ```
 
-> 💡 noVNC 访问根路径 `/` 会自动开启 **Local Scaling 自适应缩放**——电脑/手机窗口拉多大，桌面自动缩放填满。
+> 💡 noVNC 访问根路径 `/` 会自动跳转到 **Local Scaling 自适应缩放**模式——电脑/手机窗口拉多大，桌面自动缩放填满。也可以直接访问 `/vnc.html`。
+
+### 验证部署成功（3 个检查）
+
+| 检查 | 命令 | 期望结果 |
+|------|------|---------|
+| ① 服务状态 | `supervisorctl status` | 7 个服务全部 `RUNNING`：`frpc xvfb xfce4 vnc-browser chromium-gui qwenpaw qwenpaw-backup` |
+| ② 隧道连通 | `curl -s http://127.0.0.1:8080/` | 返回 noVNC 页面 HTML（本地端口 8080） |
+| ③ 公网访问 | 手机流量打开 `http://FRP_SERVER_IP:QWENPAW_REMOTE_PORT` | QwenPaw 面板能打开 |
+
+> 💡 手机开**飞行模式 / 关 Wi-Fi** 用流量测试最准，能确认公网隧道真的通了（避免"其实在局域网里"的假阳性）。
+
+### 一键卸载 / 清理
+
+```bash
+supervisorctl stop all && supervisorctl shutdown   # 停止全部服务
+rm -rf /home/frp /etc/supervisor/conf.d/*.conf     # 删 frp 配置与 supervisor 托管
+# 可选: 删除本地服务数据 (默认路径 /app/working, 按实际调整)
+rm -rf /app/working /app/working.secret
+```
+
+> ⚠️ 删除前确认数据已备份到 NAS（`NAS_BASE_DIR/qwenpaw-data`），卸载不会动 NAS 备份，重装后自动恢复。
 
 ---
 
@@ -182,6 +203,28 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 
 ---
 
+## 🔧 常见问题排查
+
+| 现象 | 原因 & 解决 |
+|------|------------|
+| `supervisorctl status` 里某服务 `FATAL` | 看日志：`tail -50 /var/log/<服务名>.err.log`（如 `frpc.err.log`）。最常见是 frpc 连不上 VPS：核对 `-s`/`-t` 与 frp.sh 输出是否一致；VPS 防火墙/安全组是否放行 7000 |
+| qwenpaw 面板打不开 | 先 `curl -s http://127.0.0.1:8088/` 看本地是否正常 → 本地通但公网不通，检查 `-q` 端口是否被占用、VPS 是否放行该端口 |
+| noVNC 连不上 / 白屏 | 确认部署时加了 `-v`（没配就没有 VNC 隧道）；浏览器开不了 WebSocket（公司网络/代理）换手机流量试；xfce4 桌面没起来看 `xvfb`/`xfce4` 服务状态 |
+| 手机打开 noVNC 但桌面是 1280x720 | 部署时没用 `-r 720x1280`，改分辨率需重新执行 `bash install.sh`（幂等，会自动更新配置） |
+| 重跑 install.sh 会不会搞坏？ | **不会**。脚本幂等：已有配置自动跳过、服务已在跑就跳过启动，放心重复执行 |
+| 想换 VPS / 换 token | 重新执行 `bash install.sh -s 新IP -t 新TOKEN -q 端口` 即可，frpc 配置会自动重建 |
+
+### ⚠️ 安全提示
+
+- **noVNC 默认无密码**（`x11vnc -nopw`），公网端口暴露后**任何人都能打开你的桌面**。建议：
+  1. 只把 noVNC 端口暴露给可信网络，或
+  2. 用 Cloudflare Access（Zero Trust 免费版）在域名前加一道登录认证，或
+  3. 部署后手动 `export DISPLAY=:1 && x11vnc -storepasswd` 给 VNC 加密码
+- frp token 相当于你内网的所有钥匙，**别提交到公开仓库 / 别截图发群里**。
+- SSH 隧道（`-S`）公网开放 root 登录风险高，建议只在你需要远程管理时才开，并优先改用密钥登录。
+
+---
+
 ## ⚙️ 可配置项（命令行参数 / 环境变量）
 
 | 参数 | 环境变量 | 默认值 | 说明 |
@@ -217,6 +260,15 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 ```
 
 所有进程由 **supervisor** 托管，开机自启、崩溃自动拉起。qwenpaw 数据每 30 分钟自动备份到 NAS，重启自动恢复。
+
+**两个浏览器各司其职：**
+
+| 浏览器 | 端口 | 用途 | 模式 |
+|--------|------|------|------|
+| `chromium-gui` | Xvfb 虚拟屏 | 你在 noVNC 里看到/操作的全屏浏览器，数据存 NAS | 有头（可视化） |
+| `chromium-cdp` | `9222` | QwenPaw 里 browser_use 自动化用的调试浏览器 | 无头 headless |
+
+> 💡 两者独立：你在 noVNC 里手动点的页面，和 AI 自动化打开的页面互不干扰。
 
 ---
 
