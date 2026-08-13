@@ -6,7 +6,7 @@
 - 🖥 **Chromium 云端浏览器**：xfce4 桌面 + 全屏 Chromium，通过 **noVNC 网页**远程操作，**手机/电脑都能用**
 - 🔑 **SSH**（可选）：远程登录
 
-> 只需填 4 个变量，`install.sh` 自动完成 frpc 下载、chromium CDP 修复、NAS 持久化探测、supervisor 托管、开机自启、数据定时备份。
+> 只需传 3 个参数（`-s` 服务器IP / `-t` TOKEN / `-q` 公网端口），`install.sh` 自动完成 frpc 下载、chromium CDP 修复、NAS 持久化探测、supervisor 托管、开机自启、数据定时备份。
 
 ---
 
@@ -47,25 +47,47 @@ bash <(curl -Ls https://main.ssss.nyc.mn/frp.sh)
 
 > frp.sh 由 [@eooce](https://github.com/eooce) 维护，一键装 frps/frpc，感谢！
 
-### 第 1 步：下载 install.sh 并填 4 个变量
+### 第 1 步：下载 install.sh
 
 ```bash
 curl -fsSL -o install.sh https://raw.githubusercontent.com/yanyumm1/chromium-QwenPaw/main/install.sh
-vim install.sh   # 只填下面 4 个变量
 ```
 
-| 变量 | 来源 | 说明 |
-|------|------|------|
-| `FRP_SERVER_IP` | frp.sh 输出的「监听IP」 | frp 服务端公网 IP |
-| `FRP_SERVER_PORT` | frp.sh 输出的「监听端口」 | 默认 `7000` |
-| `FRP_TOKEN` | frp.sh 输出的「认证TOKEN」 | 与服务端一致的 token |
-| `QWENPAW_REMOTE_PORT` | 自己定 | QwenPaw 面板公网端口 |
-
-### 第 2 步：一键部署
+### 第 2 步：一键部署（无交互，一条命令）
 
 ```bash
-bash install.sh
+bash install.sh -s <FRP_SERVER_IP> -t <FRP_TOKEN> -q <公网端口>
 ```
+
+**只要 3 个必填参数**：
+
+| 参数 | 对应 frp.sh 输出 | 说明 |
+|------|-----------------|------|
+| `-s` | 「监听IP」 | frp 服务端公网 IP |
+| `-t` | 「认证TOKEN」 | 与服务端一致的 token |
+| `-q` | 自己定 | QwenPaw 面板公网端口 |
+
+**常用可选参数**：
+
+```bash
+# 完整示例: 面板 10000 + noVNC 20000 + SSH 20022 + 电脑横屏
+bash install.sh -s 1.2.3.4 -t abc123 -q 10000 -v 20000 -S 20022 -r 1280x720
+
+# 只用环境变量 (CI/脚本里好用)
+FRP_SERVER_IP=1.2.3.4 FRP_TOKEN=abc123 QWENPAW_REMOTE_PORT=10000 bash install.sh
+
+# 查看全部参数
+bash install.sh -h
+```
+
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `-p` | `7000` | FRP 服务端监听端口 |
+| `-v` | 空 | noVNC 公网映射端口（配了才建 VNC 隧道） |
+| `-S` | 空 | SSH 公网映射端口（配了才建 SSH 隧道） |
+| `-r` | `720x1280` | 桌面分辨率（手机竖屏 / 电脑横屏 `1280x720`） |
+
+> 💡 脚本完全**无交互**：参数或环境变量传完就跑，不会卡住等输入。适合脚本/CI 自动化调用。
 
 脚本自动完成：
 
@@ -90,17 +112,17 @@ bash install.sh
 
 ---
 
-## ⚙️ 可配置项（脚本头部）
+## ⚙️ 可配置项（命令行参数 / 环境变量）
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `FRP_SSH_REMOTE_PORT` | 空 | SSH 公网映射端口（留空 = 不建 SSH 隧道） |
-| `FRP_VNC_REMOTE_PORT` | 空 | noVNC 公网映射端口（留空 = 不建 VNC 隧道） |
-| `RESOLUTION` | `720x1280` | 桌面分辨率（手机竖屏 720x1280 / 电脑横屏 1280x720） |
-| `VNC_PORT` | `8080` | 本地 noVNC 端口 |
-| `QWENPAW_PORT` | `8088` | 本地 qwenpaw app 端口 |
-| `BACKUP_INTERVAL` | `1800` | 数据备份间隔（秒） |
-| `CDP_PORT` | `9222` | chromium CDP 调试端口 |
+| 参数 | 环境变量 | 默认值 | 说明 |
+|------|---------|--------|------|
+| `-S` | `FRP_SSH_REMOTE_PORT` | 空 | SSH 公网映射端口（留空 = 不建 SSH 隧道） |
+| `-v` | `FRP_VNC_REMOTE_PORT` | 空 | noVNC 公网映射端口（留空 = 不建 VNC 隧道） |
+| `-r` | `RESOLUTION` | `720x1280` | 桌面分辨率（手机竖屏 720x1280 / 电脑横屏 1280x720） |
+| — | `VNC_PORT` | `8080` | 本地 noVNC 端口 |
+| — | `QWENPAW_PORT` | `8088` | 本地 qwenpaw app 端口 |
+| — | `BACKUP_INTERVAL` | `1800` | 数据备份间隔（秒） |
+| — | `CDP_PORT` | `9222` | chromium CDP 调试端口 |
 
 ---
 

@@ -1,17 +1,31 @@
 #!/bin/bash
 # ============================================================
-# install.sh - QwenPaw + FRP + Chromium 一键部署 (单文件)
+# 无交互一键部署: QwenPaw + FRP + Chromium
 # ============================================================
-# 前置条件:
-#   1. 你的 VPS 公网服务器已装好 FRP 服务端:
-#        bash <(curl -Ls https://main.ssss.nyc.mn/frp.sh)  选 1 安装服务端
-#      拿到: 监听IP / 监听端口 / 认证TOKEN
-#   2. 本机已有 chromium / supervisor / xvfb / xfce4 / x11vnc / websockify / novnc (qwenpaw 环境自带)
-#      (frpc 无需手动安装, 脚本会自动下载——NAT 内网机器也能一键部署)
+# 用法 (参数与环境变量二选一, 参数优先):
 #
-# 用法:
-#   1. 填好下面 4 个变量
-#   2. bash install.sh
+#   方式一 (推荐): 命令行参数
+#     bash install.sh -s <FRP服务器IP> -t <TOKEN> -q <公网端口> [选项...]
+#
+#   方式二: 环境变量
+#     FRP_SERVER_IP=x FRP_TOKEN=x QWENPAW_REMOTE_PORT=x bash install.sh
+#
+# 必填:
+#   -s, --server <IP>       FRP 服务端公网 IP (frp.sh 输出的 "监听IP")
+#   -t, --token <TOKEN>     FRP 认证 TOKEN (frp.sh 输出的 "认证TOKEN")
+#   -q, --qwenpaw <PORT>    QwenPaw 面板公网端口 (自己定, 如 10000)
+#
+# 常用可选:
+#   -p, --frp-port <PORT>   FRP 服务端监听端口 (默认 7000)
+#   -v, --vnc <PORT>        noVNC 公网映射端口 (默认空=不建 VNC 隧道)
+#   -S, --ssh <PORT>        SSH 公网映射端口 (默认空=不建 SSH 隧道)
+#   -r, --resolution <RxR>  桌面分辨率 (默认 720x1280)
+#   -h, --help              显示帮助
+#
+# 示例:
+#   bash install.sh -s 1.2.3.4 -t abc123 -q 10000
+#   bash install.sh -s 1.2.3.4 -t abc123 -q 10000 -v 20000 -S 20022 -r 1280x720
+#   FRP_SERVER_IP=1.2.3.4 FRP_TOKEN=abc123 QWENPAW_REMOTE_PORT=10000 bash install.sh
 #
 # 自动完成:
 #   - 自动下载 frpc (fatedier/frp 官方 Release, 自动匹配架构)
@@ -23,49 +37,57 @@
 # 幂等: 可重复执行, 已有配置自动跳过
 # ============================================================
 
-# ============================================================
-# >>> 用户配置区: 只需填下面 4 个变量 <<<
-# ============================================================
+# 颜色/工具函数
+red()   { echo -e "\e[1;91m$1\033[0m"; }
+green() { echo -e "\e[1;32m$1\033[0m"; }
+yellow(){ echo -e "\e[1;33m$1\033[0m"; }
 
-# ① FRP 服务端公网 IP (VPS 上 frp.sh 输出的 "监听IP")
-FRP_SERVER_IP=""
+# 显示帮助 (打印本文件头部注释, 去掉 # 前缀)
+show_help() {
+    awk 'NR>=2 && /^#/ { print substr($0, 3) } NR>=2 && !/^#/ { exit }' "$0"
+    exit 0
+}
 
-# ② FRP 服务端监听端口 (frp.sh 默认 7000)
-FRP_SERVER_PORT=7000
+# 默认配置 (环境变量优先, 命令行参数覆盖)
+FRP_SERVER_IP="${FRP_SERVER_IP:-}"
+FRP_SERVER_PORT="${FRP_SERVER_PORT:-7000}"
+FRP_TOKEN="${FRP_TOKEN:-}"
+QWENPAW_REMOTE_PORT="${QWENPAW_REMOTE_PORT:-}"
+FRP_SSH_REMOTE_PORT="${FRP_SSH_REMOTE_PORT:-}"   # SSH 公网映射端口 (留空 = 不建 SSH 隧道)
+FRP_VNC_REMOTE_PORT="${FRP_VNC_REMOTE_PORT:-}"   # noVNC 公网映射端口 (留空 = 不建 VNC 隧道)
+RESOLUTION="${RESOLUTION:-720x1280}"             # 桌面分辨率 (手机竖屏 720x1280 / 电脑横屏 1280x720)
+LOCAL_SSH_PORT="${LOCAL_SSH_PORT:-22}"           # 本地 SSH 端口
+VNC_PORT="${VNC_PORT:-8080}"                     # 本地 noVNC 端口
+QWENPAW_PORT="${QWENPAW_PORT:-8088}"             # 本地 qwenpaw app 端口
+BACKUP_INTERVAL="${BACKUP_INTERVAL:-1800}"       # 数据备份间隔(秒), 默认 30 分钟
+CDP_PORT="${CDP_PORT:-9222}"                     # chromium CDP 调试端口 (browser_use 用)
 
-# ③ FRP 认证 TOKEN (frp.sh 输出的 "认证TOKEN")
-FRP_TOKEN=""
-
-# ④ qwenpaw 公网链接端口 (frp 映射到公网的端口, 自己定一个不冲突的)
-#    部署完成后访问: http://<FRP_SERVER_IP>:<QWENPAW_REMOTE_PORT>
-QWENPAW_REMOTE_PORT=""
-
-# ============================================================
-# >>> 以下一般不用改 <<<
-# ============================================================
-FRP_SSH_REMOTE_PORT=""        # SSH 公网映射端口 (留空 = 不建 SSH 隧道)
-FRP_VNC_REMOTE_PORT=""        # noVNC 公网映射端口 (留空 = 不建 VNC 隧道)
-RESOLUTION="720x1280"         # 桌面分辨率 (手机竖屏 720x1280 / 电脑横屏 1280x720)
-LOCAL_SSH_PORT=22             # 本地 SSH 端口
-VNC_PORT=8080                 # 本地 noVNC 端口
-QWENPAW_PORT=8088             # 本地 qwenpaw app 端口
-BACKUP_INTERVAL=1800          # 数据备份间隔(秒), 默认 30 分钟
-CDP_PORT=9222                 # chromium CDP 调试端口 (browser_use 用)
+# 命令行参数解析
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -s|--server)       FRP_SERVER_IP="$2"; shift 2 ;;
+        -p|--frp-port)     FRP_SERVER_PORT="$2"; shift 2 ;;
+        -t|--token)        FRP_TOKEN="$2"; shift 2 ;;
+        -q|--qwenpaw)      QWENPAW_REMOTE_PORT="$2"; shift 2 ;;
+        -v|--vnc)          FRP_VNC_REMOTE_PORT="$2"; shift 2 ;;
+        -S|--ssh)          FRP_SSH_REMOTE_PORT="$2"; shift 2 ;;
+        -r|--resolution)   RESOLUTION="$2"; shift 2 ;;
+        -h|--help)         show_help ;;
+        *) red "❌ 未知参数: $1"; show_help ;;
+    esac
+done
 
 # ============================================================
 # 0. 基础检查
 # ============================================================
 set -e
-red()   { echo -e "\e[1;91m$1\033[0m"; }
-green() { echo -e "\e[1;32m$1\033[0m"; }
-yellow(){ echo -e "\e[1;33m$1\033[0m"; }
 
-[ "$(id -u)" != "0" ] && { red "❌ 需要 root 权限运行"; exit 1; }
+[ "$(id -u)" != "0" ] && { red "❌ 需要 root 权限运行 (sudo bash install.sh ...)"; exit 1; }
 
 if [ -z "$FRP_SERVER_IP" ] || [ -z "$FRP_TOKEN" ] || [ -z "$QWENPAW_REMOTE_PORT" ]; then
-    red "❌ 请先填写脚本开头的 4 个变量:"
-    red "   FRP_SERVER_IP, FRP_TOKEN, QWENPAW_REMOTE_PORT (FRP_SERVER_PORT 有默认值)"
-    exit 1
+    red "❌ 缺少必填参数: FRP_SERVER_IP / FRP_TOKEN / QWENPAW_REMOTE_PORT"
+    echo ""
+    show_help
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
