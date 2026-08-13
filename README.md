@@ -6,9 +6,9 @@
 
 ---
 
-## 🚀 一键还原 QwenPaw（frp + Chromium 组合）
+## 🚀 一键部署 QwenPaw（frp + Chromium 组合）
 
-本仓库提供 `deploy/` 一键还原模板，把 **QwenPaw（AI 助手）+ Chromium 浏览器桌面** 通过 frp 隧道暴露到公网，支持手机/电脑远程操作。适合在任意一台 qwenpaw 机器上快速还原环境。
+本仓库提供 `deploy/install.sh` 一键部署脚本，把 **QwenPaw（AI 助手）+ Chromium 浏览器桌面** 通过 frp 隧道暴露到公网，支持手机/电脑远程操作。适合在任意一台 qwenpaw 机器上快速还原环境。
 
 ### 使用步骤（两步）
 
@@ -23,51 +23,48 @@ bash <(curl -Ls https://main.ssss.nyc.mn/frp.sh)
 - `监听端口`（默认 `7000`）
 - `认证TOKEN`（随机生成的一串）
 
-**记下这几个值**，等下填进模板。
+**记下这几个值**，等下填进脚本。
 
-**第 2 步：在任意 qwenpaw 机器上一键还原**
+**第 2 步：在任意 qwenpaw 机器上一键部署**
 
 ```bash
-# 1. 进入 deploy 目录
+# 1. 下载脚本
 cd deploy
 
-# 2. 复制配置模板并填写 (填第1步拿到的值)
-cp config.env.example config.env
-vim config.env   # 填 FRP_SERVER_IP / FRP_TOKEN / 各端口 / VNC密码
+# 2. 编辑 install.sh 头部, 只填 4 个变量
+vim install.sh   # 填 FRP_SERVER_IP / FRP_SERVER_PORT / FRP_TOKEN / QWENPAW_REMOTE_PORT
 
-# 3. 一键还原
-bash restore.sh
+# 3. 一键部署
+bash install.sh
 ```
 
-### config.env 需要填写什么
+### install.sh 只需要填 4 个变量
 
-| 配置项 | 来源 | 说明 |
-|--------|------|------|
+| 变量 | 来源 | 说明 |
+|------|------|------|
 | `FRP_SERVER_IP` | frp.sh 输出的「监听IP」 | frp 服务端公网 IP |
 | `FRP_SERVER_PORT` | frp.sh 输出的「监听端口」 | 默认 `7000` |
 | `FRP_TOKEN` | frp.sh 输出的「认证TOKEN」 | 与服务端一致的 token |
-| `FRP_SSH_REMOTE_PORT` | 自己定 | SSH 公网映射端口 |
-| `FRP_VNC_REMOTE_PORT` | 自己定 | noVNC 公网端口（vnc.html） |
-| `FRP_APP_REMOTE_PORT` | 自己定（可选） | QwenPaw 面板公网端口 |
-| `VNC_PASSWORD` | 自己定 | noVNC 访问密码 |
-| `RESOLUTION` | 自己定 | 桌面分辨率（默认 `720x1280`） |
-| `NAS_BASE_DIR` | 自动检测 | 数据持久化目录 |
-| `BACKUP_INTERVAL` | 自己定 | 定时备份间隔（默认 1800s） |
+| `QWENPAW_REMOTE_PORT` | 自己定 | QwenPaw 面板公网端口（部署完访问 http://IP:此端口） |
 
-### 还原完成后
+其余配置（SSH/VNC 端口、分辨率、备份间隔等）都在脚本里给了合理默认值，一般不用改。
+
+### 部署完成后
 
 ```
+🌐 QwenPaw 面板: http://FRP_SERVER_IP:QWENPAW_REMOTE_PORT
 🌐 noVNC 浏览器: http://FRP_SERVER_IP:FRP_VNC_REMOTE_PORT/vnc.html
-🌐 QwenPaw 面板: http://FRP_SERVER_IP:FRP_APP_REMOTE_PORT
 🔑 SSH:          ssh -p FRP_SSH_REMOTE_PORT root@FRP_SERVER_IP
 ```
 
 ### ✨ 自带能力
 
+- **CDP 检测修复**：部署一开始自动检测本机 chromium CDP 模式（browser_use 依赖，默认 9222 端口），有问题先修好再继续
+- **NAS 路径自动探测**：不写死路径，自动找 `/run/csi/mount-root/nas/<uuid>/workspaces/`，找不到就 fallback 本地持久化
 - **开机自启**：所有服务由 supervisor 托管（`autostart=true`），容器/机器重启自动拉起
 - **数据定时存 NAS**：qwenpaw 数据（config/聊天记录）+ chromium 配置每 `BACKUP_INTERVAL` 秒同步到 NAS
 - **重启自动恢复**：启动时检查 NAS，有备份就自动恢复到本地，qwenpaw 和浏览器数据都不丢
-- **幂等**：restore.sh 可重复执行，不会重复添加配置
+- **幂等**：install.sh 可重复执行，不会重复添加配置
 
 > 原理同下方架构：frpc 把本地 8080(noVNC)/8088(qwenpaw)/22(ssh) 映射到公网，supervisor 托管 chromium 桌面 + qwenpaw 进程。
 
