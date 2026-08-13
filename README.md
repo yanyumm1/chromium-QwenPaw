@@ -59,8 +59,9 @@ URL: localhost:8080
 
 ## 🛰️ 隧道机制（借鉴 komari-argo-hug）
 
-- `start_cloudflared.py`：从 GitHub Releases 下载 `bot-{arch}.so` 动态库（ctypes 封装 cloudflared），调用 `StartCloudflared` 启动隧道
-- `Release.yml`：每日 UTC 02:00 自动同步上游 `bot.so` 到 Releases，SHA256 对比，有变化才发布
+- `start_cloudflared.py`：从 **pingmike2/komari-argo-hug** 的 GitHub Releases（`so-files-latest` tag）下载 `bot-{arch}.so` 动态库（ctypes 封装 cloudflared），调用 `StartCloudflared` 启动隧道
+- 动态库由 komari-argo-hug 仓库每日 UTC 02:00 自动同步上游并发布，本仓库直接使用，**不再自建 Release.yml**
+- 可通过 `CLOUDFLARED_LIB_URL` 环境变量覆盖下载地址
 - 支持 amd64 / arm64 / freebsd 自动适配
 
 ## 💾 Firefox 配置备份（可选）
