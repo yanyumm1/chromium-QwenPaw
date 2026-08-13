@@ -1,5 +1,16 @@
 #!/bin/bash
 
+# 加载 .env 配置 (如果存在, 借鉴 komari-argo-hug)
+if [ -f /app/.env ]; then
+    set -a
+    . /app/.env
+    set +a
+elif [ -f "$(dirname "$0")/.env" ]; then
+    set -a
+    . "$(dirname "$0")/.env"
+    set +a
+fi
+
 # 配置变量
 export VNC_PASSWORD=${VNC_PASSWORD:-"password"}
 export RESOLUTION=${RESOLUTION:-"720x1280"}
