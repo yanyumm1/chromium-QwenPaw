@@ -10,7 +10,7 @@
 
 本仓库提供 `deploy/install.sh` 一键部署脚本，把 **QwenPaw（AI 助手）+ Chromium 浏览器桌面** 通过 frp 隧道暴露到公网，支持手机/电脑远程操作。适合在任意一台 qwenpaw 机器上快速还原环境。
 
-### 使用步骤（两步）
+### 前置条件（两步自己装）
 
 **第 1 步：在你的 VPS 公网服务器上装 FRP 服务端**
 
@@ -23,18 +23,24 @@ bash <(curl -Ls https://main.ssss.nyc.mn/frp.sh)
 - `监听端口`（默认 `7000`）
 - `认证TOKEN`（随机生成的一串）
 
-**记下这几个值**，等下填进脚本。
+**第 2 步：确认本机有 frpc 客户端**
 
-**第 2 步：在任意 qwenpaw 机器上一键部署**
+qwenpaw 环境一般自带 `frpc`（在 `/home/frp/frpc`）。如果没有，同样用 frp.sh：
 
 ```bash
-# 1. 下载脚本
-cd deploy
+bash <(curl -Ls https://main.ssss.nyc.mn/frp.sh)   # 选 2 安装客户端
+```
 
-# 2. 编辑 install.sh 头部, 只填 4 个变量
+> install.sh **不会自动下载 frpc**——客户端配置是纯文本 `frpc.toml`，脚本只负责生成模板并检查 frpc 是否已安装。
+
+### 一键部署
+
+```bash
+# 1. 进入 deploy 目录, 编辑 install.sh 头部, 只填 4 个变量
+cd deploy
 vim install.sh   # 填 FRP_SERVER_IP / FRP_SERVER_PORT / FRP_TOKEN / QWENPAW_REMOTE_PORT
 
-# 3. 一键部署
+# 2. 一键部署
 bash install.sh
 ```
 
@@ -53,8 +59,8 @@ bash install.sh
 
 ```
 🌐 QwenPaw 面板: http://FRP_SERVER_IP:QWENPAW_REMOTE_PORT
-🌐 noVNC 浏览器: http://FRP_SERVER_IP:FRP_VNC_REMOTE_PORT/vnc.html
-🔑 SSH:          ssh -p FRP_SSH_REMOTE_PORT root@FRP_SERVER_IP
+🌐 noVNC 浏览器: http://FRP_SERVER_IP:FRP_VNC_REMOTE_PORT/vnc.html  (配了才有)
+🔑 SSH:          ssh -p FRP_SSH_REMOTE_PORT root@FRP_SERVER_IP       (配了才有)
 ```
 
 ### ✨ 自带能力
@@ -62,8 +68,8 @@ bash install.sh
 - **CDP 检测修复**：部署一开始自动检测本机 chromium CDP 模式（browser_use 依赖，默认 9222 端口），有问题先修好再继续
 - **NAS 路径自动探测**：不写死路径，自动找 `/run/csi/mount-root/nas/<uuid>/workspaces/`，找不到就 fallback 本地持久化
 - **开机自启**：所有服务由 supervisor 托管（`autostart=true`），容器/机器重启自动拉起
-- **数据定时存 NAS**：qwenpaw 数据（config/聊天记录）+ chromium 配置每 `BACKUP_INTERVAL` 秒同步到 NAS
-- **重启自动恢复**：启动时检查 NAS，有备份就自动恢复到本地，qwenpaw 和浏览器数据都不丢
+- **数据定时存 NAS**：qwenpaw 数据每 `BACKUP_INTERVAL` 秒同步到 NAS（备份逻辑内联在 supervisor program 里）
+- **重启自动恢复**：启动时检查 NAS，有备份就自动恢复到本地，qwenpaw 数据不丢
 - **幂等**：install.sh 可重复执行，不会重复添加配置
 
 > 原理同下方架构：frpc 把本地 8080(noVNC)/8088(qwenpaw)/22(ssh) 映射到公网，supervisor 托管 chromium 桌面 + qwenpaw 进程。
