@@ -55,37 +55,54 @@ curl -fsSL -o install.sh https://raw.githubusercontent.com/yanyumm1/chromium-Qwe
 
 ### 第 2 步：一键部署（无交互，一条命令）
 
-```bash
-bash install.sh -s <FRP_SERVER_IP> -t <FRP_TOKEN> -q <公网端口>
-```
-
-**只要 3 个必填参数**：
-
-| 参数 | 对应 frp.sh 输出 | 说明 |
-|------|-----------------|------|
-| `-s` | 「监听IP」 | frp 服务端公网 IP |
-| `-t` | 「认证TOKEN」 | 与服务端一致的 token |
-| `-q` | 自己定 | QwenPaw 面板公网端口 |
-
-**常用可选参数**：
+复制下面模板，**把变量换成你自己的值**，直接执行：
 
 ```bash
-# 完整示例: 面板 10000 + noVNC 20000 + SSH 20022 + 电脑横屏
-bash install.sh -s 1.2.3.4 -t abc123 -q 10000 -v 20000 -S 20022 -r 1280x720
+# ============ 复制下面全部, 填好 3 个必填值再运行 ============
+FRP_SERVER_IP="你的VPS公网IP"        # frp.sh 输出的「监听IP」
+FRP_TOKEN="你的TOKEN"                # frp.sh 输出的「认证TOKEN」
+QWENPAW_REMOTE_PORT="10000"          # QwenPaw 面板公网端口(自己定, 不冲突即可)
 
-# 只用环境变量 (CI/脚本里好用)
-FRP_SERVER_IP=1.2.3.4 FRP_TOKEN=abc123 QWENPAW_REMOTE_PORT=10000 bash install.sh
+# ---- 下面都是可选项, 不要就留空 / 不填 ----
+FRP_VNC_REMOTE_PORT="20000"          # noVNC 浏览器桌面公网端口(留空=不建VNC隧道)
+FRP_SSH_REMOTE_PORT="20022"          # SSH 公网端口(留空=不建SSH隧道)
+RESOLUTION="720x1280"                # 桌面分辨率: 手机竖屏 720x1280 / 电脑横屏 1280x720
 
-# 查看全部参数
-bash install.sh -h
+bash install.sh \
+  -s "$FRP_SERVER_IP" \
+  -t "$FRP_TOKEN" \
+  -q "$QWENPAW_REMOTE_PORT" \
+  ${FRP_VNC_REMOTE_PORT:+-v "$FRP_VNC_REMOTE_PORT"} \
+  ${FRP_SSH_REMOTE_PORT:+-S "$FRP_SSH_REMOTE_PORT"} \
+  -r "$RESOLUTION"
+# ============================================================
 ```
 
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `-p` | `7000` | FRP 服务端监听端口 |
-| `-v` | 空 | noVNC 公网映射端口（配了才建 VNC 隧道） |
-| `-S` | 空 | SSH 公网映射端口（配了才建 SSH 隧道） |
-| `-r` | `720x1280` | 桌面分辨率（手机竖屏 / 电脑横屏 `1280x720`） |
+> 💡 模板里的 `\` 换行 + `${VAR:+...}` 空值跳过是纯 bash 语法，直接 `bash install.sh` 就能跑，**全程无交互**。
+
+**等价写法：环境变量直接传**（不用拼命令行）：
+
+```bash
+FRP_SERVER_IP=你的IP FRP_TOKEN=你的TOKEN QWENPAW_REMOTE_PORT=10000 \
+FRP_VNC_REMOTE_PORT=20000 FRP_SSH_REMOTE_PORT=20022 bash install.sh
+```
+
+**只用 3 个必填参数**的极简版：
+
+```bash
+bash install.sh -s 你的IP -t 你的TOKEN -q 10000
+```
+
+| 参数 | 环境变量 | 对应 frp.sh 输出 | 说明 |
+|------|---------|-----------------|------|
+| `-s` | `FRP_SERVER_IP` | 「监听IP」 | frp 服务端公网 IP (**必填**) |
+| `-t` | `FRP_TOKEN` | 「认证TOKEN」 | 与服务端一致的 token (**必填**) |
+| `-q` | `QWENPAW_REMOTE_PORT` | 自己定 | QwenPaw 面板公网端口 (**必填**) |
+| `-p` | `FRP_SERVER_PORT` | 「监听端口」 | frp 服务端监听端口 (默认 `7000`) |
+| `-v` | `FRP_VNC_REMOTE_PORT` | 自己定 | noVNC 公网映射端口 (默认空=不建 VNC 隧道) |
+| `-S` | `FRP_SSH_REMOTE_PORT` | 自己定 | SSH 公网映射端口 (默认空=不建 SSH 隧道) |
+| `-r` | `RESOLUTION` | — | 桌面分辨率 (默认 `720x1280` / 电脑 `1280x720`) |
+| `-h` | — | — | 查看全部帮助 |
 
 > 💡 脚本完全**无交互**：参数或环境变量传完就跑，不会卡住等输入。适合脚本/CI 自动化调用。
 
@@ -109,6 +126,59 @@ bash install.sh -h
 ```
 
 > 💡 noVNC 访问根路径 `/` 会自动开启 **Local Scaling 自适应缩放**——电脑/手机窗口拉多大，桌面自动缩放填满。
+
+---
+
+## 🌐 套自定义域名（Cloudflare 回源）
+
+不想记 IP:端口？给 QwenPaw / noVNC 套个自己的域名，用 **Cloudflare 回源端口**（Origin Port）转发到 frp 映射的公网端口。步骤：
+
+### 1. 域名接入 Cloudflare
+
+把域名托管到 Cloudflare（免费），保证有 A 记录指向你的 **frps 公网 IP**：
+
+```
+类型: A      名称: qwenpaw（子域名）   内容: <你的VPS公网IP>   代理状态: 打开(橙色云朵)
+类型: A      名称: vnc（子域名）       内容: <你的VPS公网IP>   代理状态: 打开(橙色云朵)
+```
+
+> 需要**先**在 Cloudflare 开启 **DNS 记录代理（Proxied）**，才能在「规则」里配回源端口。刚接入的域名如果还没生效，可以先用 `cloudflare-dns.com` 测试。
+
+### 2. 配置回源端口（Origin Rules）
+
+Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → Create rule：
+
+| 字段 | 值 |
+|------|-----|
+| **Field** | `Hostname` |
+| **Operator** | `equals` |
+| **Value** | `qwenpaw.你的域名.com`（面板子域名） |
+| **Destination Port** | `你的QWENPAW_REMOTE_PORT`（如 10000） |
+
+再建一条 Origin Rule 给 noVNC：
+
+| 字段 | 值 |
+|------|-----|
+| **Field** | `Hostname` |
+| **Operator** | `equals` |
+| **Value** | `vnc.你的域名.com` |
+| **Destination Port** | `你的FRP_VNC_REMOTE_PORT`（如 20000） |
+
+**原理**：CF 收到 `https://qwenpaw.你的域名` 请求后，按 Hostname 规则把流量转发到**源站（你的 VPS）的指定端口**——这个端口正是 frps 监听的公网端口（如 10000），frps 再通过 frp 隧道送回你内网机器的 qwenpaw。
+
+### 3. 访问
+
+```
+🌐 QwenPaw 面板: https://qwenpaw.你的域名.com    (CF 自动给 TLS 证书, 免费)
+🖥  noVNC 浏览器: https://vnc.你的域名.com
+```
+
+### 常见问题
+
+- **noVNC 连不上？** noVNC 走 WebSocket，CF 需要确保代理开启（橙色云朵）。如果仍失败，在 Cloudflare → `SSL/TLS` → 把模式设为 **Full (strict)**，并在 `Network` 里开启 **WebSockets**。
+- **面板能开但 noVNC 白屏？** 检查 `FRP_VNC_REMOTE_PORT` 是否部署时配了（没配 `-v` 就没有 noVNC 隧道）。
+- **CF 缓存奇怪内容？** QwenPaw/noVNC 这种动态服务建议在 Origin Rule 对应页面的 Cache Rules 里设为 **Bypass**（不缓存）。
+- **想要 www/根域名？** 在 Cloudflare `Redirect Rules` 加一条 301 跳转到子域名即可。
 
 ---
 
