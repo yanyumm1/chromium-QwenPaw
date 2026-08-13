@@ -1,280 +1,141 @@
-# chromium-QwenPaw — 云端 Chromium 浏览器 (VNC + noVNC)
+# chromium-QwenPaw — frp 一键部署 QwenPaw + 云端 Chromium 浏览器
 
-在服务器/容器里跑一个 **Chromium 浏览器 + xfce4 桌面**，通过 **noVNC 网页**让你在任何设备（手机也行）上远程操作这个浏览器。当前线上地址：`http://YOUR_SERVER_IP:YOUR_PORT/vnc.html`
+在**任意一台 Linux 机器**（包括 NAT 内网 / 无公网 IP 的机器）上，用 **frp 内网穿透**把以下服务安全暴露到公网：
 
-> 本项目是 **SAP-Auto-deploy-Firefox** 的 Chromium 改造版，最终采用 **supervisor 托管 + frp 隧道** 方案（非 Docker/CF Tunnel），架构详见下文。
+- 🤖 **QwenPaw**：你的 AI 助手（面板 Web 界面）
+- 🖥 **Chromium 云端浏览器**：xfce4 桌面 + 全屏 Chromium，通过 **noVNC 网页**远程操作，**手机/电脑都能用**
+- 🔑 **SSH**（可选）：远程登录
+
+> 只需填 4 个变量，`install.sh` 自动完成 frpc 下载、chromium CDP 修复、NAS 持久化探测、supervisor 托管、开机自启、数据定时备份。
 
 ---
 
-## 🚀 一键部署 QwenPaw（frp + Chromium 组合）
+## 🌐 FRP 是什么？NAT 机器也能部署？
 
-本仓库提供 `deploy/install.sh` 一键部署脚本，把 **QwenPaw（AI 助手）+ Chromium 浏览器桌面** 通过 frp 隧道暴露到公网，支持手机/电脑远程操作。适合在任意一台 qwenpaw 机器上快速还原环境。
+**FRP（Fast Reverse Proxy）** 是一个开源内网穿透工具，由 [fatedier](https://github.com/fatedier) 开发（[GitHub](https://github.com/fatedier/frp)）。它的核心能力是：**把内网（NAT 后面）的服务映射到一台有公网 IP 的服务器上**，让外网能直接访问。
 
-### 前置条件（两步自己装）
+```
+无公网 IP 的内网机器 (NAT)              公网服务器 (有公网 IP)
+┌────────────────────────────┐        ┌──────────────────────┐
+│  qwenpaw :8088             │        │  frps :7000 (服务端)  │
+│  noVNC   :8080   ──frpc──▶ │──隧道──▶│                      │
+│  SSH     :22               │        │  公网端口 10000 → qwenpaw
+└────────────────────────────┘        │  公网端口 20000 → noVNC
+                                      └──────────────────────┘
+用户手机/电脑 ──▶ http://公网IP:10000 ──▶ 你的内网服务
+```
 
-**第 1 步：在你的 VPS 公网服务器上装 FRP 服务端**
+**为什么 NAT 机器也能部署？**
+- FRP 是**反向代理**：由内网机器（frpc）**主动向外**连接公网服务器（frps），所以**不需要公网 IP、不需要路由器端口映射、不需要改防火墙**
+- 你家 NAS、公司内网机器、云上没公网 IP 的容器……只要**能出网**（能访问 github），就能用本项目部署
+- 全程只需一个**有公网 IP 的 VPS**（甚至 1 核 512M 的小鸡都够当 frps 服务端）
+
+---
+
+## 🚀 快速开始
+
+### 第 0 步：准备一台公网 VPS 装 FRP 服务端
 
 ```bash
 bash <(curl -Ls https://main.ssss.nyc.mn/frp.sh)
 ```
 
-按菜单选 **1 安装 FRP 服务端 (公网服务器)**，脚本会输出：
+按菜单选 **1 安装 FRP 服务端 (公网服务器)**，脚本会输出 3 个信息（后面要用）：
 - `监听IP`（服务器公网 IP）
 - `监听端口`（默认 `7000`）
 - `认证TOKEN`（随机生成的一串）
 
-**第 2 步：确认本机有 frpc 客户端**
+> frp.sh 由 [@eooce](https://github.com/eooce) 维护，一键装 frps/frpc，感谢！
 
-qwenpaw 环境一般自带 `frpc`（在 `/home/frp/frpc`）。如果没有，同样用 frp.sh：
-
-```bash
-bash <(curl -Ls https://main.ssss.nyc.mn/frp.sh)   # 选 2 安装客户端
-```
-
-> install.sh **不会自动下载 frpc**——客户端配置是纯文本 `frpc.toml`，脚本只负责生成模板并检查 frpc 是否已安装。
-
-### 一键部署
+### 第 1 步：下载 install.sh 并填 4 个变量
 
 ```bash
-# 1. 进入 deploy 目录, 编辑 install.sh 头部, 只填 4 个变量
-cd deploy
-vim install.sh   # 填 FRP_SERVER_IP / FRP_SERVER_PORT / FRP_TOKEN / QWENPAW_REMOTE_PORT
-
-# 2. 一键部署
-bash install.sh
+curl -fsSL -o install.sh https://raw.githubusercontent.com/yanyumm1/chromium-QwenPaw/main/install.sh
+vim install.sh   # 只填下面 4 个变量
 ```
-
-### install.sh 只需要填 4 个变量
 
 | 变量 | 来源 | 说明 |
 |------|------|------|
 | `FRP_SERVER_IP` | frp.sh 输出的「监听IP」 | frp 服务端公网 IP |
 | `FRP_SERVER_PORT` | frp.sh 输出的「监听端口」 | 默认 `7000` |
 | `FRP_TOKEN` | frp.sh 输出的「认证TOKEN」 | 与服务端一致的 token |
-| `QWENPAW_REMOTE_PORT` | 自己定 | QwenPaw 面板公网端口（部署完访问 http://IP:此端口） |
+| `QWENPAW_REMOTE_PORT` | 自己定 | QwenPaw 面板公网端口 |
 
-其余配置（SSH/VNC 端口、分辨率、备份间隔等）都在脚本里给了合理默认值，一般不用改。
+### 第 2 步：一键部署
 
-### 部署完成后
+```bash
+bash install.sh
+```
+
+脚本自动完成：
+
+| 步骤 | 说明 |
+|------|------|
+| 📥 自动下载 frpc | 从 fatedier/frp 官方 Release 下载，自动匹配 Linux 架构（amd64/arm64/arm...） |
+| 🔍 chromium CDP 检测修复 | browser_use 依赖（默认 9222 端口），有问题先修好 |
+| 📂 NAS 路径自动探测 | 自动找持久化路径，找不到就 fallback 本地 |
+| 📝 生成 frpc.toml | 按你填的变量生成隧道配置 |
+| ⚙️ supervisor 托管 | 全部服务开机自启、崩溃自动拉起 |
+| 💾 数据定时备份 | qwenpaw 数据每 30 分钟同步到 NAS，重启自动恢复 |
+
+### 部署完成后访问
 
 ```
 🌐 QwenPaw 面板: http://FRP_SERVER_IP:QWENPAW_REMOTE_PORT
-🌐 noVNC 浏览器: http://FRP_SERVER_IP:FRP_VNC_REMOTE_PORT/vnc.html  (配了才有)
-🔑 SSH:          ssh -p FRP_SSH_REMOTE_PORT root@FRP_SERVER_IP       (配了才有)
+🖥  noVNC 浏览器: http://FRP_SERVER_IP:FRP_VNC_REMOTE_PORT/   (配了 FRP_VNC_REMOTE_PORT 才有, 自适应缩放)
+🔑 SSH:          ssh -p FRP_SSH_REMOTE_PORT root@FRP_SERVER_IP (配了 FRP_SSH_REMOTE_PORT 才有)
 ```
 
-### ✨ 自带能力
-
-- **CDP 检测修复**：部署一开始自动检测本机 chromium CDP 模式（browser_use 依赖，默认 9222 端口），有问题先修好再继续
-- **NAS 路径自动探测**：不写死路径，自动找 `/run/csi/mount-root/nas/<uuid>/workspaces/`，找不到就 fallback 本地持久化
-- **开机自启**：所有服务由 supervisor 托管（`autostart=true`），容器/机器重启自动拉起
-- **数据定时存 NAS**：qwenpaw 数据每 `BACKUP_INTERVAL` 秒同步到 NAS（备份逻辑内联在 supervisor program 里）
-- **重启自动恢复**：启动时检查 NAS，有备份就自动恢复到本地，qwenpaw 数据不丢
-- **幂等**：install.sh 可重复执行，不会重复添加配置
-
-> 原理同下方架构：frpc 把本地 8080(noVNC)/8088(qwenpaw)/22(ssh) 映射到公网，supervisor 托管 chromium 桌面 + qwenpaw 进程。
+> 💡 noVNC 访问根路径 `/` 会自动开启 **Local Scaling 自适应缩放**——电脑/手机窗口拉多大，桌面自动缩放填满。
 
 ---
 
-## 🏗️ 架构总览
+## ⚙️ 可配置项（脚本头部）
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `FRP_SSH_REMOTE_PORT` | 空 | SSH 公网映射端口（留空 = 不建 SSH 隧道） |
+| `FRP_VNC_REMOTE_PORT` | 空 | noVNC 公网映射端口（留空 = 不建 VNC 隧道） |
+| `RESOLUTION` | `720x1280` | 桌面分辨率（手机竖屏 720x1280 / 电脑横屏 1280x720） |
+| `VNC_PORT` | `8080` | 本地 noVNC 端口 |
+| `QWENPAW_PORT` | `8088` | 本地 qwenpaw app 端口 |
+| `BACKUP_INTERVAL` | `1800` | 数据备份间隔（秒） |
+| `CDP_PORT` | `9222` | chromium CDP 调试端口 |
+
+---
+
+## 🏗️ 架构
 
 ```
-你的手机/电脑浏览器 (noVNC 页面)
+你的手机/电脑 (noVNC 网页)
         │
         ▼
-  frp 公网入口 YOUR_SERVER_IP:YOUR_PORT   ←── frpc 隧道, 直连服务器
-        │
+公网 VPS: frps 服务端 (端口 7000)
+        │  frp 隧道
         ▼
-  websockify :8080   (noVNC 网页 + WebSocket 代理)
-        │
-        ▼
-  x11vnc :5900   (把 X 桌面变成 VNC 服务, -nopw 无密码)
-        │
-        ▼
-  Xvfb :1   (虚拟屏幕, 720x1280 竖屏)
-        │
-        ├── xfce4 桌面 (任务栏/窗口管理器)
-        └── chromium-gui (全屏浏览器窗口)
+本机 frpc ──▶ websockify :8080 (noVNC 网页)
+                 │
+                 ▼
+             x11vnc :5900
+                 │
+                 ▼
+             Xvfb :1 (720x1280 虚拟屏幕)
+                 ├── xfce4 桌面
+                 └── chromium-gui (全屏浏览器, 数据存 NAS)
 ```
 
-**所有进程都由 supervisor 托管**，开机自启、崩溃自动拉起，配置在
-`/etc/supervisor/conf.d/supervisord.conf`。
+所有进程由 **supervisor** 托管，开机自启、崩溃自动拉起。qwenpaw 数据每 30 分钟自动备份到 NAS，重启自动恢复。
 
 ---
 
-## 📂 需要的文件
+## 📜 致谢
 
-| 文件 | 作用 | 位置 |
-|------|------|------|
-| `chromium-gui.sh` | 启动全屏 chromium 窗口（720x1280, 数据持久化 NAS） | `/mnt/envd/vnc-browser/` |
-| `vnc-browser.sh` | 启动 x11vnc + websockify(noVNC) | `/mnt/envd/vnc-browser/` |
-| `supervisord.conf` + `.template` | supervisor 托管 xvfb/xfce4/chromium/vnc | `/etc/supervisor/conf.d/` |
-| `frpc.toml` | frp 客户端配置（把 8080 映射到公网 YOUR_PORT） | `/home/frp/` |
-| `frpc` | frp 客户端二进制 | `/home/frp/` |
-
-仓库内对应文件：
-- `chromium-gui.sh` ↔ `scripts/chromium-gui.sh`
-- `vnc-browser.sh` ↔ `scripts/vnc-browser.sh`
-- 部署说明：见下方「部署步骤」
+- [fatedier/frp](https://github.com/fatedier/frp) — 内网穿透核心工具，AGPL-3.0 开源
+- [@eooce](https://github.com/eooce) — frp 一键安装脚本 `frp.sh`（[仓库](https://github.com/eooce/Sing-box)），让服务端/客户端安装变成一行命令，感谢！
+- [SAP-Auto-deploy-Firefox](https://github.com/yanyumm1/Sap-FireFox-QwenPaw) — 本项目的前身（Firefox → Chromium 改造）
 
 ---
 
-## 🚀 部署步骤（从零搭建）
+## 📄 License
 
-> 以下基于 CentOS/Debian 类系统 + root 权限，容器环境同理。
-
-### 1. 安装依赖
-
-```bash
-# X 虚拟屏幕 + 桌面 + 浏览器 + VNC 工具
-apt update && apt install -y \
-    xvfb x11vnc xfce4 chromium websockify novnc \
-    supervisor curl xdotool dbus-x11
-# 或 alpine: apk add xvfb x11vnc xfce4 chromium websockify novnc supervisor xdotool dbus-x11
-```
-
-### 2. 准备脚本
-
-```bash
-mkdir -p /mnt/envd/vnc-browser
-cp chromium-gui.sh /mnt/envd/vnc-browser/
-cp vnc-browser.sh /mnt/envd/vnc-browser/
-chmod +x /mnt/envd/vnc-browser/*.sh
-```
-
-### 3. 配置 supervisor
-
-在 `/etc/supervisor/conf.d/supervisord.conf` 追加以下 program（**注意：模板也要同步改**，容器重启会用 template 覆盖 conf）：
-
-```ini
-[program:xvfb]          # 虚拟屏幕, 必须先起
-command=/bin/sh -c "rm -f /tmp/.X1-lock /tmp/.X11-unix/X1; mkdir -p /tmp/.X11-unix; exec /usr/bin/Xvfb :1 -screen 0 720x1280x24"
-autostart=true
-autorestart=true
-priority=10
-environment=DISPLAY=":1"
-
-[program:xfce4]         # 桌面环境
-command=/bin/sh -c 'export DISPLAY=:1; for i in $(seq 1 200); do [ -S /tmp/.X11-unix/X1 ] && break; sleep 0.1; done; exec dbus-run-session startxfce4'
-autostart=true
-autorestart=true
-priority=20
-environment=DISPLAY=":1"
-
-[program:vnc-browser]   # x11vnc + noVNC
-command=/mnt/envd/vnc-browser/vnc-browser.sh
-autostart=true
-autorestart=true
-priority=58
-startsecs=5
-environment=VNC_PORT="8080",VNC_PASS="your-vnc-password"
-stderr_logfile=/var/log/vnc-browser.err.log
-stdout_logfile=/var/log/vnc-browser.out.log
-
-[program:chromium-gui]  # 浏览器窗口
-command=/mnt/envd/vnc-browser/chromium-gui.sh
-autostart=true
-autorestart=true
-priority=65
-startsecs=10
-stderr_logfile=/var/log/chromium-gui.err.log
-stdout_logfile=/var/log/chromium-gui.out.log
-```
-
-```bash
-supervisorctl reread && supervisorctl update
-```
-
-### 4. 配置 frp 隧道（公网访问）
-
-下载 frpc，写配置 `/home/frp/frpc.toml`：
-
-```toml
-serverAddr = "你的服务器IP"
-serverPort = YOUR_FRP_SERVER_PORT
-
-auth.method = "token"
-auth.token = "你的token"
-
-[[proxies]]
-name = "novnc_qwenpaw"
-type = "tcp"
-localIP = "127.0.0.1"
-localPort = 8080
-remotePort = YOUR_PORT    # 公网访问端口
-```
-
-```bash
-/home/frp/frpc -c /home/frp/frpc.toml   # 或加 supervisor 托管
-```
-
-### 5. 验证
-
-```bash
-# 1. 屏幕分辨率
-DISPLAY=:1 xdpyinfo | grep dimensions   # → 720x1280 pixels
-
-# 2. chromium 窗口几何（应满屏）
-WIN=$(xdotool search --onlyvisible --class "chromium" | tail -1)
-xdotool getwindowgeometry --shell $WIN  # → X=0 Y=0 WIDTH=720 HEIGHT=1280
-
-# 3. 四个服务全部 RUNNING
-supervisorctl status xvfb xfce4 chromium-gui vnc-browser
-
-# 4. 浏览器访问
-# http://你的服务器IP:YOUR_PORT/vnc.html
-```
-
----
-
-## 🎨 分辨率调整（手机竖屏）
-
-把 1280x800 横屏改成 720x1280 竖屏，**三处必须同步改**：
-
-| 文件 | 改动 |
-|------|------|
-| `chromium-gui.sh` | `--window-size=720,1280` + `--start-fullscreen` |
-| `vnc-browser.sh` | x11vnc `-geometry 720x1280` |
-| `supervisord.conf`（+template） | Xvfb `-screen 0 720x1280x24` |
-
-```bash
-# 改完配置必须这样重启（restart 不够, 要先 reread+update）
-supervisorctl reread
-supervisorctl update
-supervisorctl restart xvfb
-sleep 2
-supervisorctl restart xfce4
-sleep 4
-supervisorctl restart chromium-gui
-sleep 3
-supervisorctl restart vnc-browser
-```
-
-> ⚠️ Xvfb 重启会级联杀掉 DISPLAY 上所有程序，必须**按依赖顺序**重启：xvfb → xfce4 → chromium-gui → vnc-browser。
-
----
-
-## 🐛 常见坑
-
-1. **supervisor 改配置后必须 `reread + update`**，`restart` 不会读新配置
-2. **`--restore-last-session` 会覆盖全屏状态**：不加它，让 `--start-fullscreen` 生效
-3. **xfce4 通知区偶尔弹窗**：被 chromium 全屏盖住，不影响使用
-4. **VNC 无密码**（`-nopw`）：访问控制靠 frp 端口 + 外层，不要暴露到公网裸奔
-
----
-
-## 🔄 数据持久化
-
-chromium 浏览器配置（书签/登录态）保存在 NAS：
-```
-/run/csi/mount-root/nas/.../browser/chromium-gui-profile
-```
-容器重启数据不丢（softlink 方式），对应 chromium 启动参数 `--user-data-dir="$NAS_DIR"`。
-
----
-
-## 📜 参考
-
-- 改造自 [SAP-Auto-deploy-Firefox](https://github.com/yanyumm1/Sap-FireFox-QwenPaw)
-- 隧道机制借鉴 [komari-argo-hug](https://github.com/pingmike2/komari-argo-hug)（本仓库保留 `start_cloudflared.py` 备选方案）
-- 详细排障记录：`VNC浏览器-竖屏分辨率调整总结.md`
+[MIT](LICENSE)

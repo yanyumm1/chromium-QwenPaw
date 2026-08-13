@@ -3,20 +3,21 @@
 # install.sh - QwenPaw + FRP + Chromium 一键部署 (单文件)
 # ============================================================
 # 前置条件:
-#   1. 你的 VPS 已装好 FRP 服务端:
+#   1. 你的 VPS 公网服务器已装好 FRP 服务端:
 #        bash <(curl -Ls https://main.ssss.nyc.mn/frp.sh)  选 1 安装服务端
 #      拿到: 监听IP / 监听端口 / 认证TOKEN
-#   2. 本机已有 frpc 二进制 (qwenpaw 环境自带; 没有就: bash <(curl -Ls https://main.ssss.nyc.mn/frp.sh) 选 2 装客户端)
-#   3. 本机已有 chromium / supervisor / xvfb / xfce4 / x11vnc / websockify / novnc (qwenpaw 环境自带)
+#   2. 本机已有 chromium / supervisor / xvfb / xfce4 / x11vnc / websockify / novnc (qwenpaw 环境自带)
+#      (frpc 无需手动安装, 脚本会自动下载——NAT 内网机器也能一键部署)
 #
 # 用法:
 #   1. 填好下面 4 个变量
 #   2. bash install.sh
 #
 # 自动完成:
+#   - 自动下载 frpc (fatedier/frp 官方 Release, 自动匹配架构)
 #   - 检测/修复本机 chromium CDP 模式 (browser_use 依赖, 有问题先修好)
 #   - 自动探测 NAS 持久化路径 (不写死, 谁都能用)
-#   - 生成 frpc.toml (纯模板, 不下载 frpc)
+#   - 生成 frpc.toml 并托管到 supervisor
 #   - supervisor 托管全部服务 + 开机自启 + 数据定时备份到 NAS
 #
 # 幂等: 可重复执行, 已有配置自动跳过
@@ -224,17 +225,53 @@ EOF
 }
 
 # ============================================================
-# 3. frpc 检查 + 写 frpc.toml (纯模板, 不下载)
+# 3. frpc 自动下载/检查 + 写 frpc.toml
 # ============================================================
-# 本机 frpc 二进制 (qwenpaw 环境自带; 没有则提示用 frp.sh 装客户端)
+# 自动下载 frpc (fatedier/frp 官方 Release), 支持任意 Linux 架构,
+# 无需手动安装——NAT 内网机器也能一键部署
 FRPC_BIN="${FRPC_BIN:-/home/frp/frpc}"
-if [ ! -x "$FRPC_BIN" ]; then
-    FRPC_BIN="$(command -v frpc || true)"
+if [ ! -x "$FRPC_BIN" ] || ! "$FRPC_BIN" -v >/dev/null 2>&1; then
+    yellow "🌐 未找到可用 frpc, 自动下载..."
+    mkdir -p "$FRP_DIR"
+
+    # 探测架构
+    ARCH="$(uname -m)"
+    case "$ARCH" in
+        x86_64|amd64)        FRP_ARCH="amd64" ;;
+        aarch64|arm64)       FRP_ARCH="arm64" ;;
+        armv7l|armv6l|armhf) FRP_ARCH="arm" ;;
+        loongarch64)         FRP_ARCH="loong64" ;;
+        mips|mips64)         FRP_ARCH="${ARCH}" ;;
+        *) red "❌ 不支持的架构: $ARCH"; exit 1 ;;
+    esac
+
+    FRP_VERSION="0.70.1"
+    FRP_TAR="frp_${FRP_VERSION}_linux_${FRP_ARCH}.tar.gz"
+    FRP_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${FRP_TAR}"
+    TMP_DIR="/tmp/frp-download-$$"
+
+    green "📥 下载 frp ${FRP_VERSION} (${FRP_ARCH}): ${FRP_URL}"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --connect-timeout 15 -o "$TMP_DIR.tgz" "$FRP_URL" || { red "❌ 下载失败: $FRP_URL"; exit 1; }
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -T 15 -O "$TMP_DIR.tgz" "$FRP_URL" || { red "❌ 下载失败: $FRP_URL"; exit 1; }
+    else
+        red "❌ 需要 curl 或 wget 来下载 frpc"; exit 1
+    fi
+
+    mkdir -p "$TMP_DIR"
+    tar -xzf "$TMP_DIR.tgz" -C "$TMP_DIR" 2>/dev/null || { red "❌ 解压失败"; exit 1; }
+    find "$TMP_DIR" -name frpc -type f | head -1 | xargs -I{} install -m 0755 {} "$FRP_BIN"
+    rm -rf "$TMP_DIR" "$TMP_DIR.tgz"
+    if [ -x "$FRPC_BIN" ] && "$FRPC_BIN" -v >/dev/null 2>&1; then
+        green "✅ frpc 下载完成: $FRPC_BIN ($("$FRPC_BIN" -v 2>&1))"
+    else
+        red "❌ frpc 安装失败, 请手动下载: https://github.com/fatedier/frp/releases"
+        exit 1
+    fi
 fi
-if [ -z "$FRPC_BIN" ] || [ ! -x "$FRPC_BIN" ]; then
-    red "❌ 未找到 frpc 二进制"
-    red "   请先安装 FRP 客户端:"
-    red "     bash <(curl -Ls https://main.ssss.nyc.mn/frp.sh)  选 2 安装客户端"
+if [ ! -x "$FRPC_BIN" ]; then
+    red "❌ 未找到可用 frpc 二进制 ($FRPC_BIN)"
     exit 1
 fi
 green "✅ frpc: $FRPC_BIN"
