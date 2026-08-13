@@ -58,6 +58,7 @@ FRP_VNC_REMOTE_PORT="${FRP_VNC_REMOTE_PORT:-}"   # noVNC 公网映射端口 (留
 RESOLUTION="${RESOLUTION:-720x1280}"             # 桌面分辨率 (手机竖屏 720x1280 / 电脑横屏 1280x720)
 LOCAL_SSH_PORT="${LOCAL_SSH_PORT:-22}"           # 本地 SSH 端口
 VNC_PORT="${VNC_PORT:-8080}"                     # 本地 noVNC 端口
+VNC_PASS="${VNC_PASS:-browser123}"               # VNC 密码 (明文, x11vnc -passwdfile 使用, 默认 browser123)
 QWENPAW_PORT="${QWENPAW_PORT:-8088}"             # 本地 qwenpaw app 端口
 BACKUP_INTERVAL="${BACKUP_INTERVAL:-1800}"       # 数据备份间隔(秒), 默认 30 分钟
 CDP_PORT="${CDP_PORT:-9222}"                     # chromium CDP 调试端口 (browser_use 用)
@@ -432,8 +433,14 @@ EOF
 set -u
 VNC_PORT="\${VNC_PORT:-${VNC_PORT}}"
 VNC_DISPLAY="\${VNC_DISPLAY:-:1}"
+VNC_PASS="\${VNC_PASS:-${VNC_PASS}}"
 RFB_PORT=5900
 LOG_DIR=/var/log
+PASS_FILE=/root/.vnc/passwdfile
+mkdir -p /root/.vnc
+# 写密码文件 (明文第一行即密码, x11vnc -passwdfile 格式), 供 -passwdfile 使用
+printf '%s\n' "\${VNC_PASS}" > "\${PASS_FILE}"
+chmod 600 "\${PASS_FILE}"
 echo "=== vnc-browser 启动 (port \${VNC_PORT}, display \${VNC_DISPLAY}) ==="
 for old in \$(pgrep -f "x11vnc -display \${VNC_DISPLAY}") \$(pgrep -f "websockify.*\${VNC_PORT}"); do
   [ -n "\$old" ] && kill "\$old" 2>/dev/null
@@ -445,7 +452,7 @@ for i in \$(seq 1 50); do
 done
 [ ! -S "/tmp/.X11-unix/X\${VNC_DISPLAY#:}" ] && { echo "❌ DISPLAY \${VNC_DISPLAY} 不存在"; exit 1; }
 rm -f /tmp/.X\${VNC_DISPLAY#:}-lock 2>/dev/null || true
-x11vnc -display "\${VNC_DISPLAY}" -forever -shared -rfbport \${RFB_PORT} -nopw -noxdamage -repeat -listen 0.0.0.0 -geometry ${RESOLUTION} -pointer_mode 1 -wait 5 -defer 5 > "\${LOG_DIR}/x11vnc.log" 2>&1 &
+x11vnc -display "\${VNC_DISPLAY}" -forever -shared -rfbport \${RFB_PORT} -passwdfile "\${PASS_FILE}" -noxdamage -repeat -listen 0.0.0.0 -geometry ${RESOLUTION} -pointer_mode 1 -wait 5 -defer 5 > "\${LOG_DIR}/x11vnc.log" 2>&1 &
 X11_PID=\$!
 # 生成自适应入口页: 根路径 / 自动跳转 vnc_auto.html?resize=scale (任何设备自动缩放填满窗口)
 cat > /usr/share/novnc/index.html <<'INDEXEOF'
@@ -494,7 +501,7 @@ autostart=true
 autorestart=true
 priority=58
 startsecs=5
-environment=VNC_PORT=\"${VNC_PORT}\"
+environment=VNC_PORT=\"${VNC_PORT}\",VNC_PASS=\"${VNC_PASS}\"
 stderr_logfile=/var/log/vnc-browser.err.log
 stdout_logfile=/var/log/vnc-browser.out.log"
 
