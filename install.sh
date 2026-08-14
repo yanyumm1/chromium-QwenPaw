@@ -5,7 +5,7 @@
 # 用法 (参数与环境变量二选一, 参数优先):
 #
 #   方式一 (推荐): 命令行参数
-#     bash install.sh -s <FRP服务器IP> -t <TOKEN> -q <公网端口> [选项...]
+#     bash install.sh -s <FRP服务器IP> -t <TOKEN> -q <公网主端口> [选项...]
 #
 #   方式二: 环境变量
 #     FRP_SERVER_IP=x FRP_TOKEN=x QWENPAW_REMOTE_PORT=x bash install.sh
@@ -13,14 +13,20 @@
 # 必填:
 #   -s, --server <IP>       FRP 服务端公网 IP (frp.sh 输出的 "监听IP")
 #   -t, --token <TOKEN>     FRP 认证 TOKEN (frp.sh 输出的 "认证TOKEN")
-#   -q, --qwenpaw <PORT>    QwenPaw 面板公网端口 (自己定, 如 10000)
+#   -q, --port <PORT>       公网主端口 (自己定, 如 10000)
+#                           自动分配: VNC/html = PORT, SSH = PORT-1, QwenPaw面板 = PORT-2
+#                           (也可用 -v/-S/-Q 单独覆盖, 优先级更高)
 #
 # 常用可选:
 #   -p, --frp-port <PORT>   FRP 服务端监听端口 (默认 7000)
-#   -v, --vnc <PORT>        noVNC 公网映射端口 (默认空=不建 VNC 隧道)
-#   -S, --ssh <PORT>        SSH 公网映射端口 (默认空=不建 SSH 隧道)
+#   -P, --password <PASS>   统一密码 (默认 browser123): VNC 密码 + SSH root 密码
 #   -r, --resolution <RxR>  桌面分辨率 (默认 720x1280)
 #   -h, --help              显示帮助
+#
+# 兼容旧参数 (设了就用, 覆盖自动推导):
+#   -Q, --qwenpaw <PORT>    QwenPaw 面板公网端口 (默认 = 主端口-2)
+#   -v, --vnc <PORT>        noVNC 公网映射端口 (默认 = 主端口)
+#   -S, --ssh <PORT>        SSH 公网映射端口 (默认 = 主端口-1)
 #
 # 环境变量扩展 (CDP_HEADED / CDP_START_URL):
 #   CDP_HEADED=1   chromium-cdp 有头模式 (默认): AI 浏览器显示在 VNC, 人机同屏
@@ -28,8 +34,8 @@
 #   CDP_START_URL=...  有头模式的启动页 (默认 Tampermonkey 扩展商店)
 #
 # 示例:
-#   bash install.sh -s 1.2.3.4 -t abc123 -q 10000
-#   bash install.sh -s 1.2.3.4 -t abc123 -q 10000 -v 20000 -S 20022 -r 1280x720
+#   bash install.sh -s 1.2.3.4 -t abc123 -q 10000 -P mypass        # VNC=10000 SSH=9999 面板=9998
+#   bash install.sh -s 1.2.3.4 -t abc123 -q 10000 -v 20000 -S 20022  # 手动覆盖 VNC/SSH 端口
 #   FRP_SERVER_IP=1.2.3.4 FRP_TOKEN=abc123 QWENPAW_REMOTE_PORT=10000 bash install.sh
 #
 # 自动完成:
@@ -57,13 +63,14 @@ show_help() {
 FRP_SERVER_IP="${FRP_SERVER_IP:-}"
 FRP_SERVER_PORT="${FRP_SERVER_PORT:-7000}"
 FRP_TOKEN="${FRP_TOKEN:-}"
-QWENPAW_REMOTE_PORT="${QWENPAW_REMOTE_PORT:-}"
-FRP_SSH_REMOTE_PORT="${FRP_SSH_REMOTE_PORT:-}"   # SSH 公网映射端口 (留空 = 不建 SSH 隧道)
-FRP_VNC_REMOTE_PORT="${FRP_VNC_REMOTE_PORT:-}"   # noVNC 公网映射端口 (留空 = 不建 VNC 隧道)
+QWENPAW_REMOTE_PORT="${QWENPAW_REMOTE_PORT:-}"   # 公网主端口: 自动推导 VNC/SSH/面板 (也可被 -Q/-v/-S 覆盖)
+FRP_SSH_REMOTE_PORT="${FRP_SSH_REMOTE_PORT:-}"   # SSH 公网映射端口 (默认 = 主端口-1, 留空且无主端口 = 不建 SSH 隧道)
+FRP_VNC_REMOTE_PORT="${FRP_VNC_REMOTE_PORT:-}"   # noVNC 公网映射端口 (默认 = 主端口, 留空且无主端口 = 不建 VNC 隧道)
+PASSWORD="${PASSWORD:-browser123}"               # 统一密码: VNC 密码 + SSH root 密码 (默认 browser123)
 RESOLUTION="${RESOLUTION:-720x1280}"             # 桌面分辨率 (手机竖屏 720x1280 / 电脑横屏 1280x720)
 LOCAL_SSH_PORT="${LOCAL_SSH_PORT:-22}"           # 本地 SSH 端口
 VNC_PORT="${VNC_PORT:-8080}"                     # 本地 noVNC 端口
-VNC_PASS="${VNC_PASS:-browser123}"               # VNC 密码 (明文, x11vnc -passwdfile 使用, 默认 browser123)
+VNC_PASS="${VNC_PASS:-$PASSWORD}"                # VNC 密码 (默认 = PASSWORD)
 QWENPAW_PORT="${QWENPAW_PORT:-8088}"             # 本地 qwenpaw app 端口
 BACKUP_INTERVAL="${BACKUP_INTERVAL:-1800}"       # 数据备份间隔(秒), 默认 30 分钟
 CDP_PORT="${CDP_PORT:-9222}"                     # chromium CDP 调试端口 (browser_use 用)
@@ -76,9 +83,11 @@ while [ $# -gt 0 ]; do
         -s|--server)       FRP_SERVER_IP="$2"; shift 2 ;;
         -p|--frp-port)     FRP_SERVER_PORT="$2"; shift 2 ;;
         -t|--token)        FRP_TOKEN="$2"; shift 2 ;;
-        -q|--qwenpaw)      QWENPAW_REMOTE_PORT="$2"; shift 2 ;;
-        -v|--vnc)          FRP_VNC_REMOTE_PORT="$2"; shift 2 ;;
-        -S|--ssh)          FRP_SSH_REMOTE_PORT="$2"; shift 2 ;;
+        -q|--port)         QWENPAW_REMOTE_PORT="$2"; shift 2 ;;
+        -P|--password)     PASSWORD="$2"; VNC_PASS="$2"; shift 2 ;;
+        -Q|--qwenpaw)      QWENPAW_PANEL_PORT="$2"; QP_SET=1; shift 2 ;;
+        -v|--vnc)          FRP_VNC_REMOTE_PORT="$2"; VNC_SET=1; shift 2 ;;
+        -S|--ssh)          FRP_SSH_REMOTE_PORT="$2"; SSH_SET=1; shift 2 ;;
         -r|--resolution)   RESOLUTION="$2"; shift 2 ;;
         -h|--help)         show_help ;;
         *) red "❌ 未知参数: $1"; show_help ;;
@@ -98,13 +107,28 @@ if [ -z "$FRP_SERVER_IP" ] || [ -z "$FRP_TOKEN" ] || [ -z "$QWENPAW_REMOTE_PORT"
     show_help
 fi
 
+# ============================================================
+# 0.5 端口自动推导: 一个主端口 -> VNC / SSH / 面板 三隧道
+#   主端口 N   =>  VNC/html = N,  SSH = N-1,  QwenPaw面板 = N-2
+#   已显式设置 -v / -S / -Q 的端口优先 (向后兼容)
+#   显式传 0 = 禁用该隧道 (如 -S 0 不建 SSH 隧道)
+# ============================================================
+[ "${VNC_SET:-}" = "1" ] || FRP_VNC_REMOTE_PORT="$((QWENPAW_REMOTE_PORT))"
+[ "${SSH_SET:-}" = "1" ] || FRP_SSH_REMOTE_PORT="$((QWENPAW_REMOTE_PORT - 1))"
+[ "${QP_SET:-}"  = "1" ] || QWENPAW_PANEL_PORT="$((QWENPAW_REMOTE_PORT - 2))"
+
+# 显式传 0 禁用隧道
+[ "$FRP_VNC_REMOTE_PORT" != "0" ] || FRP_VNC_REMOTE_PORT=""
+[ "$FRP_SSH_REMOTE_PORT" != "0" ] || FRP_SSH_REMOTE_PORT=""
+[ "$QWENPAW_PANEL_PORT"  != "0" ] || QWENPAW_PANEL_PORT=""
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FRP_DIR=/home/frp
 
 green "============================================================"
 green " QwenPaw + FRP + Chromium 一键部署"
 green " FRP服务器: ${FRP_SERVER_IP}:${FRP_SERVER_PORT}"
-green " 公网端口: qwenpaw=${QWENPAW_REMOTE_PORT} vnc=${FRP_VNC_REMOTE_PORT:-无} ssh=${FRP_SSH_REMOTE_PORT:-无}"
+green " 公网端口: vnc/html=${FRP_VNC_REMOTE_PORT} ssh=${FRP_SSH_REMOTE_PORT} qwenpaw面板=${QWENPAW_PANEL_PORT}"
 green "============================================================"
 
 # ============================================================
@@ -320,6 +344,47 @@ if [ ! -x "$FRPC_BIN" ]; then
 fi
 green "✅ frpc: $FRPC_BIN"
 
+# ============================================================
+# 3.5 SSH 服务 + root 密码 (容器重建后 sshd 常缺失; 有 SSH 隧道才需要)
+#    PASSWORD 统一密码: 同时作为 VNC 密码和 SSH root 密码
+#    用户不单独设置 SSH 密码就复用 (SSH_PASSWORD 留空 = 用 PASSWORD)
+# ============================================================
+SSH_PASSWORD="${SSH_PASSWORD:-$PASSWORD}"   # SSH root 密码 (默认复用 PASSWORD)
+if [ -n "$FRP_SSH_REMOTE_PORT" ]; then
+    yellow "🔑 配置 SSH (root 密码 = ${SSH_PASSWORD})..."
+    # 确保 sshd 已安装 (容器重建后常缺失)
+    if ! command -v sshd >/dev/null 2>&1 && [ ! -x /usr/sbin/sshd ]; then
+        apt-get update -qq && apt-get install -y -qq openssh-server
+    fi
+    [ -d /run/sshd ] || mkdir -p /run/sshd
+    # 设置 root 密码 (解锁 + 改密; 容器重建后 root 常为锁定状态 L)
+    if printf 'root:%s\n' "$SSH_PASSWORD" | chpasswd 2>/dev/null; then
+        green "✅ root 密码已设置"
+    else
+        red "❌ root 密码设置失败"; exit 1
+    fi
+    passwd -u root >/dev/null 2>&1 || true
+    # 允许 root 密码登录
+    printf '%s\n' '# 允许 root 通过密码登录 (frp 隧道部署)' 'PermitRootLogin yes' 'PasswordAuthentication yes' > /etc/ssh/sshd_config.d/99-frp-tunnel.conf
+    # 启动 sshd (容器无 systemd, 手动拉起; 已在跑则跳过)
+    if ! pgrep -x sshd >/dev/null 2>&1; then
+        /usr/sbin/sshd
+        sleep 1
+        green "✅ sshd 已启动"
+    else
+        pkill -x sshd 2>/dev/null || true
+        sleep 1
+        /usr/sbin/sshd
+        green "✅ sshd 已重启 (pid $(pgrep -x sshd | head -1))"
+    fi
+    # 验证本地 SSH 端口在监听
+    if ! timeout 5 bash -c "echo > /dev/tcp/127.0.0.1/${LOCAL_SSH_PORT}" 2>/dev/null; then
+        red "❌ sshd 启动异常: 127.0.0.1:${LOCAL_SSH_PORT} 无法连接"
+        exit 1
+    fi
+    green "✅ 本地 ${LOCAL_SSH_PORT} 端口可连 (root/${SSH_PASSWORD})"
+fi
+
 mkdir -p "$FRP_DIR"
 cat > "$FRP_DIR/frpc.toml" <<EOF
 serverAddr = "${FRP_SERVER_IP}"
@@ -337,7 +402,7 @@ name = "qwenpaw_$(hostname)"
 type = "tcp"
 localIP = "127.0.0.1"
 localPort = ${QWENPAW_PORT}
-remotePort = ${QWENPAW_REMOTE_PORT}
+remotePort = ${QWENPAW_PANEL_PORT}
 EOF
 
 if [ -n "$FRP_SSH_REMOTE_PORT" ]; then
@@ -595,7 +660,7 @@ green "============================================================"
 green "✅ QwenPaw 一键部署完成!"
 green ""
 green " 🌐 QwenPaw 面板:"
-green "    http://${FRP_SERVER_IP}:${QWENPAW_REMOTE_PORT}"
+green "    http://${FRP_SERVER_IP}:${QWENPAW_PANEL_PORT}"
 green ""
 if [ -n "$FRP_VNC_REMOTE_PORT" ]; then
     green " 🖥  noVNC 浏览器桌面:"
@@ -605,6 +670,7 @@ green ""
 if [ -n "$FRP_SSH_REMOTE_PORT" ]; then
     green " 🔑 SSH:"
     green "    ssh -p ${FRP_SSH_REMOTE_PORT} root@${FRP_SERVER_IP}"
+    green "    (密码 = ${VNC_PASS} 或单独设置的 SSH 密码)"
 fi
 green ""
 green " 💾 数据持久化:"

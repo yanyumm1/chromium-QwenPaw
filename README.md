@@ -61,33 +61,32 @@ curl -fsSL -o install.sh https://raw.githubusercontent.com/yanyumm1/chromium-Qwe
 # ============ 复制下面全部, 填好 3 个必填值再运行 ============
 FRP_SERVER_IP="你的VPS公网IP"        # frp.sh 输出的「监听IP」
 FRP_TOKEN="你的TOKEN"                # frp.sh 输出的「认证TOKEN」
-QWENPAW_REMOTE_PORT="10000"          # QwenPaw 面板公网端口(自己定, 不冲突即可)
+QWENPAW_REMOTE_PORT="10000"          # 公网主端口(自己定, 不冲突即可)
+                                     # 自动分配: VNC/html=10000, SSH=9999, QwenPaw面板=9998
 
 # ---- 下面都是可选项, 不要就留空 / 不填 ----
-FRP_VNC_REMOTE_PORT="20000"          # noVNC 浏览器桌面公网端口(留空=不建VNC隧道)
-FRP_SSH_REMOTE_PORT="20022"          # SSH 公网端口(留空=不建SSH隧道)
+PASSWORD="browser123"                # 统一密码: VNC 密码 + SSH root 密码 (默认 browser123)
 RESOLUTION="720x1280"                # 桌面分辨率: 手机竖屏 720x1280 / 电脑横屏 1280x720
 
 bash install.sh \
   -s "$FRP_SERVER_IP" \
   -t "$FRP_TOKEN" \
   -q "$QWENPAW_REMOTE_PORT" \
-  ${FRP_VNC_REMOTE_PORT:+-v "$FRP_VNC_REMOTE_PORT"} \
-  ${FRP_SSH_REMOTE_PORT:+-S "$FRP_SSH_REMOTE_PORT"} \
+  ${PASSWORD:+-P "$PASSWORD"} \
   -r "$RESOLUTION"
 # ============================================================
 ```
 
-> 💡 模板里的 `\` 换行 + `${VAR:+...}` 空值跳过是纯 bash 语法，直接 `bash install.sh` 就能跑，**全程无交互**。
+> 💡 **一个端口三服务**：只填 `-q` 一个公网端口，install.sh 自动把 `VNC/html = 主端口`、`SSH = 主端口-1`、`QwenPaw面板 = 主端口-2` 三条 frp 隧道都建好！密码也统一：VNC 和 SSH root 用同一个 `-P` 密码（不填默认 `browser123`）。
 
 **等价写法：环境变量直接传**（不用拼命令行）：
 
 ```bash
 FRP_SERVER_IP=你的IP FRP_TOKEN=你的TOKEN QWENPAW_REMOTE_PORT=10000 \
-FRP_VNC_REMOTE_PORT=20000 FRP_SSH_REMOTE_PORT=20022 bash install.sh
+PASSWORD=你的密码 bash install.sh
 ```
 
-**只用 3 个必填参数**的极简版：
+**只用 3 个必填参数**的极简版（密码默认 browser123）：
 
 ```bash
 bash install.sh -s 你的IP -t 你的TOKEN -q 10000
@@ -97,11 +96,14 @@ bash install.sh -s 你的IP -t 你的TOKEN -q 10000
 |------|---------|-----------------|------|
 | `-s` | `FRP_SERVER_IP` | 「监听IP」 | frp 服务端公网 IP (**必填**) |
 | `-t` | `FRP_TOKEN` | 「认证TOKEN」 | 与服务端一致的 token (**必填**) |
-| `-q` | `QWENPAW_REMOTE_PORT` | 自己定 | QwenPaw 面板公网端口 (**必填**) |
+| `-q` | `QWENPAW_REMOTE_PORT` | 自己定 | 公网主端口 (**必填**): VNC=主端口, SSH=主端口-1, 面板=主端口-2 |
+| `-P` | `PASSWORD` | — | 统一密码 (默认 `browser123`): VNC 密码 + SSH root 密码 |
 | `-p` | `FRP_SERVER_PORT` | 「监听端口」 | frp 服务端监听端口 (默认 `7000`) |
-| `-v` | `FRP_VNC_REMOTE_PORT` | 自己定 | noVNC 公网映射端口 (默认空=不建 VNC 隧道) |
-| `-S` | `FRP_SSH_REMOTE_PORT` | 自己定 | SSH 公网映射端口 (默认空=不建 SSH 隧道) |
+| `-Q` | `QWENPAW_PANEL_PORT` | 自己定 | 单独覆盖 QwenPaw 面板公网端口 (默认=主端口-2) |
+| `-v` | `FRP_VNC_REMOTE_PORT` | 自己定 | 单独覆盖 noVNC 公网端口 (默认=主端口, 传0=不建VNC) |
+| `-S` | `FRP_SSH_REMOTE_PORT` | 自己定 | 单独覆盖 SSH 公网端口 (默认=主端口-1, 传0=不建SSH) |
 | `-r` | `RESOLUTION` | — | 桌面分辨率 (默认 `720x1280` / 电脑 `1280x720`) |
+| — | `SSH_PASSWORD` | — | 单独设置 SSH root 密码 (默认复用 PASSWORD) |
 | `-h` | — | — | 查看全部帮助 |
 
 > 💡 脚本完全**无交互**：参数或环境变量传完就跑，不会卡住等输入。适合脚本/CI 自动化调用。
@@ -113,16 +115,17 @@ bash install.sh -s 你的IP -t 你的TOKEN -q 10000
 | 📥 自动下载 frpc | 从 fatedier/frp 官方 Release 下载，自动匹配 Linux 架构（amd64/arm64/arm...） |
 | 🔍 chromium CDP 检测修复 | browser_use 依赖（默认 9222 端口），有问题先修好 |
 | 📂 NAS 路径自动探测 | 自动找持久化路径，找不到就 fallback 本地 |
-| 📝 生成 frpc.toml | 按你填的变量生成隧道配置 |
+| 📝 生成 frpc.toml | 一个主端口自动推导三条隧道 (VNC/SSH/面板) |
+| 🔑 SSH 配置 | 自动装/启 sshd + 设 root 密码 (复用 VNC 密码) + 允许密码登录 |
 | ⚙️ supervisor 托管 | 全部服务开机自启、崩溃自动拉起 |
 | 💾 数据定时备份 | qwenpaw 数据每 30 分钟同步到 NAS，重启自动恢复 |
 
 ### 部署完成后访问
 
 ```
-🌐 QwenPaw 面板: http://FRP_SERVER_IP:QWENPAW_REMOTE_PORT
-🖥  noVNC 浏览器: http://FRP_SERVER_IP:FRP_VNC_REMOTE_PORT/vnc.html   (配了 FRP_VNC_REMOTE_PORT 才有, 自适应缩放)
-🔑 SSH:          ssh -p FRP_SSH_REMOTE_PORT root@FRP_SERVER_IP (配了 FRP_SSH_REMOTE_PORT 才有)
+🌐 QwenPaw 面板: http://FRP_SERVER_IP:主端口-2    (如 -q 10000 → 9998)
+🖥  noVNC 浏览器: http://FRP_SERVER_IP:主端口/vnc.html   (如 -q 10000 → 10000, 密码 = PASSWORD)
+🔑 SSH:          ssh -p 主端口-1 root@FRP_SERVER_IP   (如 -q 10000 → 9999, 密码 = PASSWORD)
 ```
 
 > 💡 noVNC 访问根路径 `/` 会自动跳转到 **Local Scaling 自适应缩放**模式——电脑/手机窗口拉多大，桌面自动缩放填满。也可以直接访问 `/vnc.html`。
@@ -133,7 +136,7 @@ bash install.sh -s 你的IP -t 你的TOKEN -q 10000
 |------|------|---------|
 | ① 服务状态 | `supervisorctl status` | 7 个服务全部 `RUNNING`：`frpc xvfb xfce4 vnc-browser chromium-gui qwenpaw qwenpaw-backup` |
 | ② 隧道连通 | `curl -s http://127.0.0.1:8080/` | 返回 noVNC 页面 HTML（本地端口 8080） |
-| ③ 公网访问 | 手机流量打开 `http://FRP_SERVER_IP:QWENPAW_REMOTE_PORT` | QwenPaw 面板能打开 |
+| ③ 公网访问 | 手机流量打开 `http://FRP_SERVER_IP:主端口-2`（如 -q 10000 → 9998） | QwenPaw 面板能打开 |
 
 > 💡 手机开**飞行模式 / 关 Wi-Fi** 用流量测试最准，能确认公网隧道真的通了（避免"其实在局域网里"的假阳性）。
 
@@ -174,7 +177,7 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 | **Field** | `Hostname` |
 | **Operator** | `equals` |
 | **Value** | `qwenpaw.你的域名.com`（面板子域名） |
-| **Destination Port** | `你的QWENPAW_REMOTE_PORT`（如 10000） |
+| **Destination Port** | `你的主端口-2`（如 -q 10000 → 9998） |
 
 再建一条 Origin Rule 给 noVNC：
 
@@ -183,7 +186,7 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 | **Field** | `Hostname` |
 | **Operator** | `equals` |
 | **Value** | `vnc.你的域名.com` |
-| **Destination Port** | `你的FRP_VNC_REMOTE_PORT`（如 20000） |
+| **Destination Port** | `你的主端口`（如 -q 10000 → 10000 = VNC） |
 
 **原理**：CF 收到 `https://qwenpaw.你的域名` 请求后，按 Hostname 规则把流量转发到**源站（你的 VPS）的指定端口**——这个端口正是 frps 监听的公网端口（如 10000），frps 再通过 frp 隧道送回你内网机器的 qwenpaw。
 
@@ -197,7 +200,7 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 ### 常见问题
 
 - **noVNC 连不上？** noVNC 走 WebSocket，CF 需要确保代理开启（橙色云朵）。如果仍失败，在 Cloudflare → `SSL/TLS` → 把模式设为 **Full (strict)**，并在 `Network` 里开启 **WebSockets**。
-- **面板能开但 noVNC 白屏？** 检查 `FRP_VNC_REMOTE_PORT` 是否部署时配了（没配 `-v` 就没有 noVNC 隧道）。
+- **面板能开但 noVNC 白屏？** noVNC 默认就是主端口（`-q` 填的那个），确认你访问的是 `http://IP:主端口/vnc.html` 且浏览器没挡。
 - **CF 缓存奇怪内容？** QwenPaw/noVNC 这种动态服务建议在 Origin Rule 对应页面的 Cache Rules 里设为 **Bypass**（不缓存）。
 - **想要 www/根域名？** 在 Cloudflare `Redirect Rules` 加一条 301 跳转到子域名即可。
 
@@ -216,10 +219,10 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 
 ### ⚠️ 安全提示
 
-- **noVNC 默认无密码**（`x11vnc -nopw`），公网端口暴露后**任何人都能打开你的桌面**。建议：
-  1. 只把 noVNC 端口暴露给可信网络，或
-  2. 用 Cloudflare Access（Zero Trust 免费版）在域名前加一道登录认证，或
-  3. 部署后手动 `export DISPLAY=:1 && x11vnc -storepasswd` 给 VNC 加密码
+- **noVNC 已默认带密码**（`x11vnc -passwdfile`，默认 `browser123`，可用 `-P` 修改）。公网端口暴露后**任何人知道密码都能打开你的桌面**，建议：
+  1. 用 `-P` 设一个强密码（VNC + SSH root 统一），别用默认的 `browser123`，或
+  2. 只把 noVNC 端口暴露给可信网络，或
+  3. 用 Cloudflare Access（Zero Trust 免费版）在域名前加一道登录认证
 - frp token 相当于你内网的所有钥匙，**别提交到公开仓库 / 别截图发群里**。
 - SSH 隧道（`-S`）公网开放 root 登录风险高，建议只在你需要远程管理时才开，并优先改用密钥登录。
 
@@ -229,9 +232,13 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 |------|---------|--------|------|
-| `-S` | `FRP_SSH_REMOTE_PORT` | 空 | SSH 公网映射端口（留空 = 不建 SSH 隧道） |
-| `-v` | `FRP_VNC_REMOTE_PORT` | 空 | noVNC 公网映射端口（留空 = 不建 VNC 隧道） |
+| `-q` | `QWENPAW_REMOTE_PORT` | (必填) | 公网主端口：VNC=主端口, SSH=主端口-1, 面板=主端口-2 |
+| `-P` | `PASSWORD` | `browser123` | 统一密码：VNC 密码 + SSH root 密码 |
+| `-Q` | `QWENPAW_PANEL_PORT` | 主端口-2 | 单独覆盖 QwenPaw 面板公网端口（传0=不建） |
+| `-S` | `FRP_SSH_REMOTE_PORT` | 主端口-1 | SSH 公网映射端口（传0=不建 SSH 隧道） |
+| `-v` | `FRP_VNC_REMOTE_PORT` | 主端口 | noVNC 公网映射端口（传0=不建 VNC 隧道） |
 | `-r` | `RESOLUTION` | `720x1280` | 桌面分辨率（手机竖屏 720x1280 / 电脑横屏 1280x720） |
+| — | `SSH_PASSWORD` | =PASSWORD | 单独设置 SSH root 密码 |
 | — | `VNC_PORT` | `8080` | 本地 noVNC 端口 |
 | — | `QWENPAW_PORT` | `8088` | 本地 qwenpaw app 端口 |
 | — | `BACKUP_INTERVAL` | `1800` | 数据备份间隔（秒） |
@@ -281,20 +288,23 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 容器平台重建后，frp 隧道配置会丢。`scripts/recover-frp.sh` 一键恢复 **SSH + VNC 两条隧道**（同时恢复 sshd / root 密码 / 公钥 / supervisor 托管）：
 
 ```bash
-bash scripts/recover-frp.sh                # 默认端口: SSH 30207 + VNC 30208
+bash scripts/recover-frp.sh                # 默认: REMOTE_PORT=30208 → VNC 30208 + SSH 30207
 ```
 
-**端口也是变量**，部署时设置的两个端口，重建后原样传回去即可：
+**端口也是变量**，和 install.sh 的 `-q` 主端口一致，重建后原样传回去即可：
 
 ```bash
-# 和 install.sh 的 -S / -v 保持一致
-SSH_REMOTE_PORT=20022 VNC_REMOTE_PORT=20000 bash scripts/recover-frp.sh
+# 和 install.sh 的 -q 主端口保持一致 (VNC=主端口, SSH=主端口-1)
+REMOTE_PORT=10000 bash scripts/recover-frp.sh
 ```
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `SSH_REMOTE_PORT` | `30207` | SSH 公网映射端口（设空 = 不建 SSH 隧道） |
-| `VNC_REMOTE_PORT` | `30208` | noVNC 公网映射端口（设空 = 不建 VNC 隧道） |
+| `REMOTE_PORT` | `30208` | 公网主端口：VNC = 主端口, SSH = 主端口-1（与 install.sh `-q` 一致） |
+| `SSH_REMOTE_PORT` | 主端口-1 | 单独覆盖 SSH 公网映射端口（设空 = 不建 SSH 隧道） |
+| `VNC_REMOTE_PORT` | 主端口 | 单独覆盖 noVNC 公网映射端口（设空 = 不建 VNC 隧道） |
+| `PASSWORD` / `VNC_PASS` | `browser123` | 统一密码：VNC 密码（默认 browser123） |
+| `SSH_PASSWORD` | VNC 密码 | 单独设置 SSH root 密码（默认复用 VNC 密码） |
 | `SSH_LOCAL_PORT` | `22` | 本地 SSH 端口 |
 | `VNC_LOCAL_PORT` | `8080` | 本地 noVNC/websockify 端口 |
 
