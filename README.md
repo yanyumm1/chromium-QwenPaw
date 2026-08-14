@@ -276,6 +276,32 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 
 ---
 
+## 🔄 容器重建后一键恢复（recover-frp.sh）
+
+容器平台重建后，frp 隧道配置会丢。`scripts/recover-frp.sh` 一键恢复 **SSH + VNC 两条隧道**（同时恢复 sshd / root 密码 / 公钥 / supervisor 托管）：
+
+```bash
+bash scripts/recover-frp.sh                # 默认端口: SSH 30207 + VNC 30208
+```
+
+**端口也是变量**，部署时设置的两个端口，重建后原样传回去即可：
+
+```bash
+# 和 install.sh 的 -S / -v 保持一致
+SSH_REMOTE_PORT=20022 VNC_REMOTE_PORT=20000 bash scripts/recover-frp.sh
+```
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `SSH_REMOTE_PORT` | `30207` | SSH 公网映射端口（设空 = 不建 SSH 隧道） |
+| `VNC_REMOTE_PORT` | `30208` | noVNC 公网映射端口（设空 = 不建 VNC 隧道） |
+| `SSH_LOCAL_PORT` | `22` | 本地 SSH 端口 |
+| `VNC_LOCAL_PORT` | `8080` | 本地 noVNC/websockify 端口 |
+
+> 💡 恢复脚本会自动验证：frpc 进程 → SSH banner → noVNC 公网 HTTP 200，全链路确认后才算完成。
+
+---
+
 ## 📜 致谢
 
 - [fatedier/frp](https://github.com/fatedier/frp) — 内网穿透核心工具，AGPL-3.0 开源
