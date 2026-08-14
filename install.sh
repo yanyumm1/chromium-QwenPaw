@@ -293,6 +293,22 @@ EOF
 }
 
 # ============================================================
+# 2.5 Xvnc (TigerVNC) 检测安装 —— v5 动态分辨率架构依赖
+# ============================================================
+# v5 用 Xvnc 替代 Xvfb+x11vnc: Xvnc 自带 RandR 动态分辨率 + 内置 VNC server
+# 新机器若只有 Xvfb 没有 Xvnc, 自动 apt 安装 tigervnc-standalone-server
+if [ -n "$FRP_VNC_REMOTE_PORT" ]; then
+    if ! command -v Xvnc >/dev/null 2>&1; then
+        yellow "🔧 未找到 Xvnc (TigerVNC), 自动安装 tigervnc-standalone-server..."
+        apt-get update -qq && apt-get install -y -qq tigervnc-standalone-server x11-apps
+        command -v Xvnc >/dev/null 2>&1 && green "✅ Xvnc 安装完成: $(Xvnc -version 2>&1 | head -1)" \
+            || { red "❌ Xvnc 安装失败, 请手动 apt install tigervnc-standalone-server"; exit 1; }
+    else
+        green "✅ Xvnc 已就绪: $(Xvnc -version 2>&1 | head -1)"
+    fi
+fi
+
+# ============================================================
 # 3. frpc 自动下载/检查 + 写 frpc.toml
 # ============================================================
 # 自动下载 frpc (fatedier/frp 官方 Release), 支持任意 Linux 架构,
@@ -515,7 +531,8 @@ EOF
 
     cat > "$VNC_DIR/vnc-browser.sh" <<EOF
 #!/bin/bash
-# vnc-browser.sh - 暴露 xfce4 桌面 (DISPLAY :1) 为 noVNC 网页浏览器
+# vnc-browser.sh - 暴露 Xvnc 桌面 (DISPLAY :1) 为 noVNC 网页浏览器
+# 架构: Xvnc (TigerVNC, 自带动态分辨率) + websockify + noVNC vnc.html
 set -u
 VNC_PORT="\${VNC_PORT:-${VNC_PORT}}"
 VNC_DISPLAY="\${VNC_DISPLAY:-:1}"
@@ -524,11 +541,11 @@ RFB_PORT=5900
 LOG_DIR=/var/log
 PASS_FILE=/root/.vnc/passwdfile
 mkdir -p /root/.vnc
-# 写密码文件 (明文第一行即密码, x11vnc -passwdfile 格式), 供 -passwdfile 使用
+# 写密码文件 (Xvnc 用 -SecurityTypes None 时不需要; 保留以备后续改 VncAuth)
 printf '%s\n' "\${VNC_PASS}" > "\${PASS_FILE}"
 chmod 600 "\${PASS_FILE}"
 echo "=== vnc-browser 启动 (port \${VNC_PORT}, display \${VNC_DISPLAY}) ==="
-for old in \$(pgrep -f "x11vnc -display \${VNC_DISPLAY}") \$(pgrep -f "websockify.*\${VNC_PORT}"); do
+for old in \$(pgrep -f "websockify.*\${VNC_PORT}"); do
   [ -n "\$old" ] && kill "\$old" 2>/dev/null
 done
 sleep 1
@@ -538,35 +555,70 @@ for i in \$(seq 1 50); do
 done
 [ ! -S "/tmp/.X11-unix/X\${VNC_DISPLAY#:}" ] && { echo "❌ DISPLAY \${VNC_DISPLAY} 不存在"; exit 1; }
 rm -f /tmp/.X\${VNC_DISPLAY#:}-lock 2>/dev/null || true
-x11vnc -display "\${VNC_DISPLAY}" -forever -shared -rfbport \${RFB_PORT} -passwdfile "\${PASS_FILE}" -noxdamage -repeat -listen 0.0.0.0 -geometry ${RESOLUTION} -pointer_mode 1 -wait 5 -defer 5 > "\${LOG_DIR}/x11vnc.log" 2>&1 &
-X11_PID=\$!
-# 生成自适应入口页: 根路径 / 自动跳转 vnc_auto.html?resize=scale (任何设备自动缩放填满窗口)
+# 生成入口页: 根路径 / 自动跳转 vnc.html (完整 UI, 控制栏默认收起, autoconnect)
 cat > /usr/share/novnc/index.html <<'INDEXEOF'
 <!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VNC Browser</title>
 <script>
-// 自动跳转到 vnc_auto.html 并带 resize=scale (本地缩放) + autoconnect
+// 自动跳转到 vnc.html (完整 UI, 控制栏默认收起, 支持缩放切换)
 var base = location.pathname.replace(/index\.html$/, '');
-var target = base + 'vnc_auto.html?autoconnect=1&resize=scale';
+var target = base + 'vnc.html?autoconnect=1&resize=scale&show_dot=0';
 if (location.search) target += '&' + location.search.replace(/^\?/, '');
 location.replace(target);
 </script></head><body>
-<p>Redirecting to <a href="vnc_auto.html?autoconnect=1&amp;resize=scale">VNC Browser (auto scale)...</a></p>
+<p>Redirecting to <a href="vnc.html?autoconnect=1&amp;resize=scale&amp;show_dot=0">VNC Browser...</a></p>
 </body></html>
 INDEXEOF
+# 确保 vnc.html 允许用户缩放 (幂等)
+AUTO="/usr/share/novnc/vnc.html"
+if [ -f "\$AUTO" ]; then
+  sed -i 's/maximum-scale=1.0, user-scalable=no/maximum-scale=3.0/g' "\$AUTO"
+fi
+# websockify: 桥接 Xvnc 原生 VNC 服务 (5900)
 websockify --web /usr/share/novnc \${VNC_PORT} localhost:\${RFB_PORT} > "\${LOG_DIR}/novnc.log" 2>&1 &
 WEB_PID=\$!
 sleep 2
-echo "✅ noVNC: http://localhost:\${VNC_PORT}/ (自适应缩放) 或 /vnc.html?resize=scale"
-wait -n "\${X11_PID}" "\${WEB_PID}" 2>/dev/null || wait "\${X11_PID}" "\${WEB_PID}"
+echo "✅ noVNC: http://localhost:\${VNC_PORT}/vnc.html?autoconnect=1 (控制栏默认收起)"
+echo "✅ 切分辨率: /mnt/envd/vnc-browser/vnc-resize.sh phone|desktop|WxH"
+wait "\${WEB_PID}" 2>/dev/null
 EOF
 
-    chmod +x "$VNC_DIR"/chromium-gui.sh "$VNC_DIR"/vnc-browser.sh
+    cat > "$VNC_DIR/vnc-resize.sh" <<'EOF'
+#!/bin/bash
+# vnc-resize.sh - 动态切换虚拟桌面分辨率 (Xvnc TigerVNC 原生支持 RandR)
+# 用法: vnc-resize.sh phone|desktop|WxH|status
+set -u
+DISPLAY="${DISPLAY:-:1}"
+export DISPLAY
+
+get_size() {
+  xrandr --query | grep -oP '\d+x\d+(?=\s)' | head -1
+}
+
+case "${1:-}" in
+  phone|mobile|竖屏)
+    xrandr -s 720x1280 2>&1 ;;
+  desktop|pc|横屏)
+    xrandr -s 1280x720 2>&1 ;;
+  ''|status|current)
+    echo "当前分辨率: $(get_size)" ;;
+  *)
+    if echo "$1" | grep -qE '^[0-9]+x[0-9]+$'; then
+      xrandr -s "$1" 2>&1
+    else
+      echo "用法: $0 [phone|desktop|WxH]"
+      exit 1
+    fi ;;
+esac
+echo "当前分辨率: $(get_size)"
+EOF
+
+    chmod +x "$VNC_DIR"/chromium-gui.sh "$VNC_DIR"/vnc-browser.sh "$VNC_DIR"/vnc-resize.sh
     green "✅ VNC/Chromium 脚本已生成: $VNC_DIR"
 
-    append_program xvfb "command=/bin/sh -c \"rm -f /tmp/.X1-lock /tmp/.X11-unix/X1; mkdir -p /tmp/.X11-unix; exec /usr/bin/Xvfb :1 -screen 0 ${RESOLUTION}x24\"
+    append_program xvfb "command=/bin/sh -c \"rm -f /tmp/.X1-lock /tmp/.X11-unix/X1; mkdir -p /tmp/.X11-unix /root/.vnc; exec /usr/bin/Xvnc :1 -geometry ${RESOLUTION} -depth 24 -SecurityTypes None -localhost -AcceptSetDesktopSize=1 -AlwaysShared -rfbport 5900\"
 autostart=true
 autorestart=true
 priority=10
