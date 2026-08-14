@@ -48,3 +48,9 @@ id_rsa*
 id_ed25519*
 authorized_keys
 .ssh/
+
+# ---------- 心得文档保护 (永不忽略/删除) ----------
+# 心得 .md 是项目知识沉淀, 必须始终纳入 git 跟踪
+!*.md
+!心得*.md
+!README.md
