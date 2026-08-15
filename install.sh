@@ -578,6 +578,12 @@ AUTO="/usr/share/novnc/vnc.html"
 if [ -f "\$AUTO" ]; then
   sed -i 's/maximum-scale=1.0, user-scalable=no/maximum-scale=3.0/g' "\$AUTO"
 fi
+# 双保险: ui.js 默认 resize 从 off 改为 scale (直接访问 vnc.html 不带参数也铺满, iOS Safari 无法操作根因之一)
+UJS="/usr/share/novnc/app/ui.js"
+if [ -f "\$UJS" ]; then
+  grep -q "initSetting('resize', 'scale')" "\$UJS" || \
+    sed -i "s/UI.initSetting('resize', 'off');/UI.initSetting('resize', 'scale');/" "\$UJS"
+fi
 # websockify: 桥接 Xvnc 原生 VNC 服务 (5900)
 websockify --web /usr/share/novnc \${VNC_PORT} localhost:\${RFB_PORT} > "\${LOG_DIR}/novnc.log" 2>&1 &
 WEB_PID=\$!
