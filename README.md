@@ -213,6 +213,7 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 | `supervisorctl status` 里某服务 `FATAL` | 看日志：`tail -50 /var/log/<服务名>.err.log`（如 `frpc.err.log`）。最常见是 frpc 连不上 VPS：核对 `-s`/`-t` 与 frp.sh 输出是否一致；VPS 防火墙/安全组是否放行 7000 |
 | qwenpaw 面板打不开 | 先 `curl -s http://127.0.0.1:8088/` 看本地是否正常 → 本地通但公网不通，检查 `-q` 端口是否被占用、VPS 是否放行该端口 |
 | noVNC 连不上 / 白屏 | 确认部署时加了 `-v`（没配就没有 VNC 隧道）；浏览器开不了 WebSocket（公司网络/代理）换手机流量试；xfce4 桌面没起来看 `xvfb`/`xfce4` 服务状态 |
+| noVNC 打开是**纯白**（桌面啥都没有） | 多半是**孤儿 chromium 抢屏**：`supervisorctl stop chromium-gui` 只杀脚本壳，`&` 后台起的 chromium 变孤儿继续占桌面。用 `DISPLAY=:1 xdotool search --onlyvisible --name ".*"` 看有几个窗口，`pkill -f "chromium-gui-profile"` 精准清理。有头模式正常只该有 chromium-cdp 窗口 |
 | 手机打开 noVNC 但桌面是 1280x720 | 部署时没用 `-r 720x1280`，改分辨率需重新执行 `bash install.sh`（幂等，会自动更新配置） |
 | 重跑 install.sh 会不会搞坏？ | **不会**。脚本幂等：已有配置自动跳过、服务已在跑就跳过启动，放心重复执行 |
 | 想换 VPS / 换 token | 重新执行 `bash install.sh -s 新IP -t 新TOKEN -q 端口` 即可，frpc 配置会自动重建 |
@@ -275,7 +276,7 @@ Cloudflare 控制台 → 你的域名 → **规则 Rules → Origin Rules** → 
 | 浏览器 | 端口 | 用途 | 模式 |
 |--------|------|------|------|
 | `chromium-cdp` | `9222` | QwenPaw 里 browser_use 自动化用的调试浏览器，**同时显示在 noVNC 桌面**——AI 在浏览器里做什么，你实时看得到 | 有头（可视化，默认） |
-| `chromium-gui` | Xvfb 虚拟屏 | 独立展示浏览器（Bing 首页），仅当 `CDP_HEADED=0` 时才自动启动 | 有头（可选） |
+| `chromium-gui` | Xvfb 虚拟屏 | 独立展示浏览器（默认 Tampermonkey 商店，`exec` 前台直启防孤儿进程），仅当 `CDP_HEADED=0` 时才自动启动 | 有头（可选） |
 
 > ✨ **v2 核心体验**：默认 `CDP_HEADED=1`，AI 自动化用的 chromium 直接以**完整浏览器界面**（标签栏+地址栏）显示在 VNC 桌面上，启动页默认 **Tampermonkey 扩展商店**（可 `CDP_START_URL` 自定义）。你在 noVNC 里看到的，就是 AI 正在操作的同一个浏览器——**人机同屏**，AI 点哪你都能看到。
 >

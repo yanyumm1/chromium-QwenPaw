@@ -501,6 +501,8 @@ if [ -n "$FRP_VNC_REMOTE_PORT" ]; then
     cat > "$VNC_DIR/chromium-gui.sh" <<EOF
 #!/bin/bash
 # chromium-gui.sh - 在 DISPLAY :1 (xfce4 桌面) 上启动带窗口的 chromium
+# 注意: 必须用 exec 前台直启 (不要 & 后台 + 守护循环), 否则 supervisorctl stop
+#       只杀脚本壳, chromium 变孤儿进程继续占桌面 → 白屏/抢屏 (2026-08-15 教训)
 set -u
 NAS_DIR="${CHROMIUM_PROFILE_DIR}"
 mkdir -p "\$NAS_DIR"
@@ -514,19 +516,19 @@ exec /usr/bin/chromium \\
   --test-type \\
   --window-size=${RESOLUTION/x/,} \\
   --start-fullscreen \\
+  --window-position=0,0 \\
   --user-data-dir="\$NAS_DIR" \\
   --disable-dev-shm-usage \\
   --disable-gpu \\
   --disable-software-rasterizer \\
   --disable-background-networking \\
-  --restore-last-session \\
   --hide-crash-restore-bubble \\
   --disable-session-crashed-bubble \\
   --disable-infobars \\
   --no-first-run \\
   --disable-features=Translate,BackForwardCache \\
   --js-flags=--max-old-space-size=1024 \\
-  about:blank
+  ${CDP_START_URL}
 EOF
 
     cat > "$VNC_DIR/vnc-browser.sh" <<EOF
