@@ -195,7 +195,7 @@ check_cdp() {
     #   有头 (CDP_HEADED=1): 显示在 VNC 桌面, 能直接看到 AI 在浏览器里干什么
     #   无头 (CDP_HEADED=0): 后台运行, 省内存, 适合纯自动化不关心界面
     if [ "${CDP_HEADED:-1}" = "1" ]; then
-        CDP_CMD="${CHROMIUM_BIN} --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/chromium-cdp-profile --window-size=${RESOLUTION} --kiosk --window-position=0,0 --lang=zh-CN --accept-lang=zh-CN,zh --user-agent=\"Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1\" ${CDP_START_URL}"
+        CDP_CMD="${CHROMIUM_BIN} --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/chromium-cdp-profile --window-size=${RESOLUTION} --window-position=0,0 --lang=zh-CN --accept-lang=zh-CN,zh --user-agent=\"Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1\" ${CDP_START_URL}"
         CDP_ENV='environment=DISPLAY=":1"'
         CDP_GUI_AUTOSTART=false   # cdp 有头已占 VNC 桌面, 不再自动起独立的 chromium-gui
     else
@@ -573,17 +573,8 @@ location.replace(target);
 <p>Redirecting to <a href="vnc.html?autoconnect=1&amp;resize=scale&amp;show_dot=0">VNC Browser...</a></p>
 </body></html>
 INDEXEOF
-# 确保 vnc.html 允许用户缩放 (幂等)
-AUTO="/usr/share/novnc/vnc.html"
-if [ -f "\$AUTO" ]; then
-  sed -i 's/maximum-scale=1.0, user-scalable=no/maximum-scale=3.0/g' "\$AUTO"
-fi
-# 双保险: ui.js 默认 resize 从 off 改为 scale (直接访问 vnc.html 不带参数也铺满, iOS Safari 无法操作根因之一)
-UJS="/usr/share/novnc/app/ui.js"
-if [ -f "\$UJS" ]; then
-  grep -q "initSetting('resize', 'scale')" "\$UJS" || \
-    sed -i "s/UI.initSetting('resize', 'off');/UI.initSetting('resize', 'scale');/" "\$UJS"
-fi
+# noVNC chrome.sh 风格补丁: 侧边工具栏保持展开 + 底部状态栏常显 + resize=scale (幂等)
+python3 "\$VNC_DIR/novnc-chromesh-patch.py" 2>/dev/null || echo "⚠️ noVNC patch 失败"
 # websockify: 桥接 Xvnc 原生 VNC 服务 (5900)
 websockify --web /usr/share/novnc \${VNC_PORT} localhost:\${RFB_PORT} > "\${LOG_DIR}/novnc.log" 2>&1 &
 WEB_PID=\$!
@@ -592,6 +583,130 @@ echo "✅ noVNC: http://localhost:\${VNC_PORT}/vnc.html?autoconnect=1 (控制栏
 echo "✅ 切分辨率: /mnt/envd/vnc-browser/vnc-resize.sh phone|desktop|WxH"
 wait "\${WEB_PID}" 2>/dev/null
 EOF
+
+    cat > "$VNC_DIR/novnc-chromesh-patch.py" <<'PYEOF'
+#!/usr/bin/env python3
+"""noVNC chrome.sh 风格补丁 (幂等):
+1. ui.js: 连接后侧边控制栏保持展开 (去掉 2 秒自动收起)
+2. base.css: 底部状态栏常显 (参考 chrome.sh 底部工具栏)
+3. ui.js: resize 默认 scale (iOS Safari 铺满)
+4. vnc.html: 锁定 viewport (iOS Safari 修复 2026-08-18)
+    iOS Safari 对 noVNC 整体放大后, 页面缩放机制会把桌面缩小到整页, 造成"缩放不正常"
+    (安卓 Chrome 不放大整体页面故正常). 锁定 viewport 后 resize=scale 的 canvas 按
+    视口铺满, 不受 Safari 缩放影响.
+用法: python3 /mnt/envd/vnc-browser/novnc-chromesh-patch.py
+"""
+import re
+import sys
+import os
+
+NOVNC = "/usr/share/novnc"
+UJS = os.path.join(NOVNC, "app/ui.js")
+CSS = os.path.join(NOVNC, "app/styles/base.css")
+VNC_HTML = os.path.join(NOVNC, "vnc.html")
+
+changed = []
+
+def patch_file(path, marker, old, new):
+    """如果 marker 不存在就做替换 (幂等)"""
+    if not os.path.isfile(path):
+        print(f"  ⚠️ 不存在: {path}")
+        return
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    if marker in content:
+        print(f"  ⏭️ 已打过补丁 (跳过): {os.path.basename(path)}")
+        return
+    if old in content:
+        content = content.replace(old, new, 1)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        changed.append(path)
+        print(f"  ✅ patched: {path}")
+    else:
+        print(f"  ❌ 找不到 old 内容: {os.path.basename(path)}")
+
+print("=== noVNC chrome.sh 风格补丁 ===")
+
+# 1. ui.js: resize 默认 scale
+patch_file(
+    UJS,
+    marker="initSetting('resize', 'scale')",
+    old="UI.initSetting('resize', 'off');",
+    new="UI.initSetting('resize', 'scale');",
+)
+
+# 2. ui.js: 连接后不自动收起侧边栏
+patch_file(
+    UJS,
+    marker="参考 chrome.sh, 侧边工具栏保持展开",
+    old="            // Hide the controlbar after 2 seconds\n            UI.closeControlbarTimeout = setTimeout(UI.closeControlbar, 2000);",
+    new="            // 2026-08-18: 参考 chrome.sh, 侧边工具栏保持展开 (不自动收起)\n            // UI.closeControlbarTimeout = setTimeout(UI.closeControlbar, 2000);\n            UI.keepControlbar();\n            UI.openControlbar();",
+)
+
+# 3. base.css: 底部状态栏常显 (bottom + 一直可见)
+patch_file(
+    CSS,
+    marker="参考 chrome.sh, 底部工具栏常显",
+    old="""#noVNC_status {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 100;
+  transform: translateY(-100%);
+
+  cursor: pointer;
+
+  transition: 0.5s ease-in-out;
+
+  visibility: hidden;
+  opacity: 0;""",
+    new="""#noVNC_status {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  z-index: 100;
+  /* 2026-08-18: 参考 chrome.sh, 底部工具栏常显 (原 top:-100% 隐藏) */
+  transform: none;
+
+  cursor: pointer;
+
+  transition: 0.5s ease-in-out;
+
+  visibility: visible;
+  opacity: 1;""",
+)
+
+# 4. vnc.html: 锁定 viewport (iOS Safari 修复 2026-08-18)
+_VIEWPORT_OLD = [
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">',
+]
+_VIEWPORT_NEW = '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">'
+if os.path.isfile(VNC_HTML):
+    content = open(VNC_HTML, encoding="utf-8").read()
+    if _VIEWPORT_NEW in content:
+        print("  ⏭️ 已打过补丁 (跳过): vnc.html viewport")
+    else:
+        changed_vp = False
+        for old_vp in _VIEWPORT_OLD:
+            if old_vp in content:
+                content = content.replace(old_vp, _VIEWPORT_NEW, 1)
+                changed_vp = True
+                break
+        if changed_vp:
+            open(VNC_HTML, "w", encoding="utf-8").write(content)
+            changed.append(VNC_HTML)
+            print("  ✅ patched: vnc.html viewport 锁定")
+        else:
+            print("  ❌ 找不到 vnc.html 旧 viewport 内容")
+
+print(f"=== 完成: {len(changed)} 个文件被修改 ===")
+sys.exit(0)
+PYEOF
+    chmod +x "$VNC_DIR/novnc-chromesh-patch.py"
 
     cat > "$VNC_DIR/vnc-resize.sh" <<'EOF'
 #!/bin/bash
