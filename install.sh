@@ -195,7 +195,7 @@ check_cdp() {
     #   有头 (CDP_HEADED=1): 显示在 VNC 桌面, 能直接看到 AI 在浏览器里干什么
     #   无头 (CDP_HEADED=0): 后台运行, 省内存, 适合纯自动化不关心界面
     if [ "${CDP_HEADED:-1}" = "1" ]; then
-        CDP_CMD="${CHROMIUM_BIN} --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/chromium-cdp-profile --window-size=${RESOLUTION} ${CDP_START_URL}"
+        CDP_CMD="${CHROMIUM_BIN} --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/chromium-cdp-profile --window-size=${RESOLUTION} --kiosk --window-position=0,0 --lang=zh-CN --accept-lang=zh-CN,zh --user-agent=\"Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1\" ${CDP_START_URL}"
         CDP_ENV='environment=DISPLAY=":1"'
         CDP_GUI_AUTOSTART=false   # cdp 有头已占 VNC 桌面, 不再自动起独立的 chromium-gui
     else
