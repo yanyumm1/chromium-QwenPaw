@@ -481,7 +481,7 @@ patch_file(
   opacity: 1;""",
 )
 
-# 4. vnc.html: 锁定 viewport (iOS Safari 修复 2026-08-18)
+# 4. vnc.html: 锁定 viewport (iOS Safari 修复)
 _VIEWPORT_OLD = [
     '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0">',
     '<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">',
