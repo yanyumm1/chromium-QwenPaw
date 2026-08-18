@@ -154,6 +154,14 @@ rm -rf /app/working /app/working.secret
 
 ---
 
+## 📓 心得合集
+
+把这个仓库从 v1 到 v7 的全部改造过程、踩坑、架构演进整理成了一份完整文档：
+
+- [`心得合集-v2到v7.md`](心得合集-v2到v7.md) —— 人机同屏（CDP 有头化）→ 一端口三服务 → jlesage 方案学习 → Xvnc 动态分辨率 → 白屏/孤儿进程排查 → 移动端适配（iOS Safari / 商店 UA / 去隧道 / 状态栏优化）→ 考古
+
+---
+
 ## 📜 License
 
 [MIT](LICENSE)
