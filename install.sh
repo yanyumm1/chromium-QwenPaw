@@ -944,6 +944,94 @@ if [ "${ENABLE_FRP:-0}" = "1" ]; then
 fi
 
 # ============================================================
+# 5.7 部署产物备份到 NAS (scope panel 式自愈: 容器重建后 entrypoint 从 NAS 恢复)
+#     vnc-backup / frp-backup / panel-backup 三个目录, 与 /entrypoint.sh 恢复逻辑对应
+# ============================================================
+backup_to_nas() {
+    yellow "💾 备份部署产物到 NAS (自愈恢复用)..."
+
+    # --- vnc-backup/scripts: VNC 网关脚本 (entrypoint 恢复 /mnt/envd/vnc-browser 用) ---
+    VNC_BACKUP="${NAS_BASE_DIR}/vnc-backup"
+    mkdir -p "$VNC_BACKUP/scripts"
+    if [ -d "$VNC_DIR" ]; then
+        cp -f "$VNC_DIR/"*.sh "$VNC_DIR/"*.py "$VNC_BACKUP/scripts/" 2>/dev/null
+        chmod +x "$VNC_BACKUP/scripts/"*.sh "$VNC_BACKUP/scripts/"*.py 2>/dev/null
+        green "  ✅ vnc-backup/scripts ($(ls "$VNC_BACKUP/scripts" | wc -l) 个文件)"
+    fi
+
+    # --- frp-backup: frpc 二进制 + 恢复脚本 (entrypoint 恢复 /home/frp 用) ---
+    FRP_BACKUP="${NAS_BASE_DIR}/frp-backup"
+    mkdir -p "$FRP_BACKUP"
+    if [ -f "$FRP_BIN_DIR/frpc" ]; then
+        cp -f "$FRP_BIN_DIR/frpc" "$FRP_BACKUP/frpc"
+        chmod +x "$FRP_BACKUP/frpc"
+        green "  ✅ frp-backup/frpc"
+    fi
+    # 生成 recover-frp.sh (entrypoint 调用: 从 NAS 恢复 frpc 二进制+配置+启动)
+    cat > "$FRP_BACKUP/recover-frp.sh" <<EOF
+#!/bin/bash
+# recover-frp.sh - 从 NAS 备份恢复 frpc 并启动隧道 (entrypoint 自愈调用)
+NAS_BASE="\$(cd "\$(dirname "\$0")" && pwd)"
+FRP_DIR=/home/frp
+mkdir -p "\$FRP_DIR"
+cp -f "\$NAS_BASE/frpc" "\$FRP_DIR/frpc" 2>/dev/null
+chmod +x "\$FRP_DIR/frpc"
+cat > "\$FRP_DIR/frpc.toml" <<TOML
+serverAddr = "$FRP_SERVER"
+serverPort = $FRP_SERVER_PORT
+
+auth.method = "token"
+auth.token = "$FRP_TOKEN"
+
+log.to = "/var/log/frpc.log"
+log.level = "error"
+log.maxDays = 3
+
+[[proxies]]
+name = "ssh_qwenpaw"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 22
+remotePort = $FRP_SSH_REMOTE_PORT
+
+[[proxies]]
+name = "novnc_qwenpaw"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = $VNC_PORT
+remotePort = $FRP_REMOTE_PORT
+TOML
+# 启动 (幂等)
+pkill -f "frpc -c.*frpc.toml" 2>/dev/null || true
+sleep 1
+cd "\$FRP_DIR" && setsid nohup ./frpc -c ./frpc.toml >/var/log/frpc-start.log 2>&1 < /dev/null &
+sleep 3
+pgrep -f "frpc -c" >/dev/null 2>&1 && echo "✅ frpc 已恢复并启动" || echo "❌ frpc 恢复失败"
+EOF
+    chmod +x "$FRP_BACKUP/recover-frp.sh"
+    green "  ✅ frp-backup/recover-frp.sh"
+
+    # --- panel-backup: supervisor 模板 (entrypoint 恢复 supervisord.conf.template 用) ---
+    PANEL_BACKUP="${NAS_BASE_DIR}/panel-backup"
+    mkdir -p "$PANEL_BACKUP"
+    if [ -f /etc/supervisor/conf.d/supervisord.conf.template ]; then
+        cp -f /etc/supervisor/conf.d/supervisord.conf.template "$PANEL_BACKUP/supervisord.conf.template"
+        green "  ✅ panel-backup/supervisord.conf.template"
+    elif [ -f /etc/supervisor/conf.d/supervisord.conf ]; then
+        cp -f /etc/supervisor/conf.d/supervisord.conf "$PANEL_BACKUP/supervisord.conf.template"
+        green "  ✅ panel-backup/supervisord.conf.template (从生效配置备份)"
+    fi
+
+    # --- chromium CDP profile 备份目录 (已在 NAS, 确认存在) ---
+    mkdir -p "${NAS_BASE_DIR}/browser"
+    green "  ✅ browser/ (chromium profile 目录已确认)"
+
+    green "💾 备份完成 → ${NAS_BASE_DIR}/{vnc-backup,frp-backup,panel-backup}"
+}
+
+backup_to_nas
+
+# ============================================================
 # 6. 启动全部服务 + 输出
 # ============================================================
 green "🚀 启动服务..."
@@ -969,6 +1057,11 @@ green " 💾 数据持久化:"
 green "    NAS: ${NAS_BASE_DIR}"
 green "    每 ${BACKUP_INTERVAL}s 自动备份, 重启自动恢复"
 green "    chromium CDP profile: ${CDP_PROFILE_DIR:-${NAS_BASE_DIR}/browser/chromium-cdp-profile}"
+green ""
+green " 🛟 自愈备份 (scope panel 式):"
+green "    ${NAS_BASE_DIR}/vnc-backup    (VNC 网关脚本, entrypoint 恢复用)"
+green "    ${NAS_BASE_DIR}/frp-backup    (frpc 二进制+recover-frp.sh, entrypoint 恢复用)"
+green "    ${NAS_BASE_DIR}/panel-backup  (supervisor 模板, entrypoint 恢复用)"
 green ""
 green " 🌐 chromium CDP: ${CDP_PORT} (browser_use 用)"
 if [ "${ENABLE_FRP:-0}" = "1" ]; then

@@ -70,6 +70,7 @@ CDP_HEADED=0 bash install.sh             # chromium-cdp 无头模式（省内存
 | ⚙️ supervisor 托管 | 全部服务开机自启、崩溃自动拉起 |
 | 💾 数据定时备份 | qwenpaw 数据每 30 分钟同步到 NAS，重启自动恢复 |
 | 🧬 CDP profile 持久化 | chromium CDP 调试浏览器的 cookie/登录态/书签存到 NAS（`NAS/browser/chromium-cdp-profile`），重启不丢 |
+| 🛟 自愈备份（scope panel 式） | 部署产物自动备份到 NAS：`vnc-backup/`（VNC 网关脚本）、`frp-backup/`（frpc+recover-frp.sh）、`panel-backup/`（supervisor 模板）；容器重建后 entrypoint 自动从 NAS 恢复，无需手动干预 |
 | 🔗 frp 内网穿透（可选） | `--frp` 自动部署 frpc，公网 noVNC/SSH 一键可达（supervisor 托管，重建自启） |
 
 ### 验证部署成功（3 个检查）
