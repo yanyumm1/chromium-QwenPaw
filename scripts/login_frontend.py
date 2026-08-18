@@ -25,7 +25,7 @@ from websockify import auth_plugins as auth
 # ---------------- 配置 ----------------
 WEB_DIR = os.environ.get("VNC_WEB_DIR", "/usr/share/novnc")
 AUTH_SECRET = os.environ.get("VNC_AUTH_SECRET", "qwenpaw-novnc-secret")
-USERNAME = os.environ.get("VNC_AUTH_USER", "admin")
+USERNAME = os.environ.get("VNC_AUTH_USER", "qwenpaw")
 PASSWORD = os.environ.get("VNC_AUTH_PASS", "pingmikeAs")
 COOKIE_NAME = "VNC_AUTH"
 COOKIE_TTL = 24 * 3600

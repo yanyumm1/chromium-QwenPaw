@@ -4,7 +4,7 @@
 set -u
 VNC_PORT="${VNC_PORT:-8080}"
 VNC_DISPLAY="${VNC_DISPLAY:-:1}"
-VNC_USER="${VNC_USER:-admin}"
+VNC_USER="${VNC_USER:-qwenpaw}"
 VNC_PASS="${VNC_PASS:-pingmikeAs}"
 RFB_PORT=5900
 LOG_DIR=/var/log

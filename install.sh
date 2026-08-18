@@ -355,7 +355,7 @@ EOF
 set -u
 VNC_PORT="\${VNC_PORT:-${VNC_PORT}}"
 VNC_DISPLAY="\${VNC_DISPLAY:-:1}"
-VNC_USER="\${VNC_USER:-admin}"
+VNC_USER="\${VNC_USER:-qwenpaw}"
 VNC_PASS="\${VNC_PASS:-${VNC_PASS}}"
 RFB_PORT=5900
 LOG_DIR=/var/log
