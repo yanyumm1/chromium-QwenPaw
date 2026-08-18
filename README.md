@@ -21,6 +21,7 @@ bash install.sh
 
 # 可选参数
 bash install.sh -P mypass -r 1280x720    # 改密码 + 电脑横屏
+bash install.sh --frp -P 123456          # 部署 + frp 公网穿透（公网 30208/30207 一键可达）
 CDP_HEADED=0 bash install.sh             # chromium-cdp 无头模式（省内存）
 ```
 
@@ -30,6 +31,10 @@ CDP_HEADED=0 bash install.sh             # chromium-cdp 无头模式（省内存
 | `-r` | `RESOLUTION` | `720x1280` | 桌面分辨率（手机竖屏 720x1280 / 电脑横屏 1280x720） |
 | `-V` | `VNC_PORT` | `8080` | 本地 noVNC 端口 |
 | `-Q` | `QWENPAW_PORT` | `8088` | 本地 qwenpaw 面板端口 |
+| `-F` | `ENABLE_FRP` | `0` | 启用 frp 内网穿透（`--frp`） |
+| `-S` | `FRP_SERVER` | `165.1.122.72` | frps 服务器地址 |
+| `-T` | `FRP_TOKEN` | （线上值） | frps token |
+| `-R` | `FRP_REMOTE_PORT` | `30208` | 公网主端口（VNC=REMOTE, SSH=REMOTE-1） |
 | `-h` | — | — | 查看帮助 |
 
 ### 部署完成后访问
@@ -42,9 +47,16 @@ CDP_HEADED=0 bash install.sh             # chromium-cdp 无头模式（省内存
 
 > 💡 noVNC 访问根路径 `/` 会自动跳转到 **Local Scaling 自适应缩放**模式——窗口拉多大，桌面自动缩放填满。也可以直接访问 `/vnc.html`。
 
-### 需要公网访问？
+### 公网访问（frp 集成）
 
-本项目不包含隧道——如果机器有公网 IP / 已做端口映射，直接访问 `http://机器IP:8080` 即可；如果是内网机器，可自行套 **frp / Cloudflare Tunnel / tailscale** 等任一方案把 `8080`/`8088` 暴露出去（本项目只管本地服务）。
+`install.sh --frp` 会自动部署 frpc（supervisor 托管），公网一键可达：
+
+```
+🌐 公网 noVNC: http://165.1.122.72:30208/vnc.html   (密码 = PASSWORD)
+🌐 公网 SSH:   ssh root@165.1.122.72 -p 30207       (密码 = PASSWORD)
+```
+
+> 原理：frpc 把本地 `8080`（noVNC）映射到公网 `30208`，把本地 `22`（SSH）映射到公网 `30207`。若不用本项目自带的 frp，也可自行套 **Cloudflare Tunnel / tailscale** 等任一方案。
 
 ---
 
@@ -57,6 +69,8 @@ CDP_HEADED=0 bash install.sh             # chromium-cdp 无头模式（省内存
 | 📂 NAS 路径自动探测 | 自动找持久化路径（`/run/csi/mount-root/nas/*`、`/mnt/nas` 等），找不到 fallback 本地 |
 | ⚙️ supervisor 托管 | 全部服务开机自启、崩溃自动拉起 |
 | 💾 数据定时备份 | qwenpaw 数据每 30 分钟同步到 NAS，重启自动恢复 |
+| 🧬 CDP profile 持久化 | chromium CDP 调试浏览器的 cookie/登录态/书签存到 NAS（`NAS/browser/chromium-cdp-profile`），重启不丢 |
+| 🔗 frp 内网穿透（可选） | `--frp` 自动部署 frpc，公网 noVNC/SSH 一键可达（supervisor 托管，重建自启） |
 
 ### 验证部署成功（3 个检查）
 

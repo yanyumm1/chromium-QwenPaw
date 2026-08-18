@@ -5,13 +5,17 @@
 # 本地直接部署 (无需 FRP 隧道): VNC 浏览器桌面 + QwenPaw 面板都在本机端口
 #
 # 使用:
-#   bash install.sh [-P 密码] [-r 分辨率]
+#   bash install.sh [-P 密码] [-r 分辨率] [--frp]
 #
 # 常用可选:
 #   -P, --password <PASS>   VNC 密码 + SSH root 密码 (默认 browser123)
 #   -r, --resolution <RxR>  桌面分辨率 (默认 720x1280)
 #   -V, --vnc-port <PORT>   noVNC 本地端口 (默认 8080)
 #   -Q, --qwenpaw-port <PORT> QwenPaw 面板端口 (默认 8088)
+#   -F, --frp               启用 frp 内网穿透 (部署 frpc + supervisor 托管)
+#   -S, --frp-server <IP>   frps 服务器地址 (默认 165.1.122.72)
+#   -T, --frp-token <TOKEN> frps token
+#   -R, --frp-remote-port <PORT> 公网主端口 (默认 30208, VNC=REMOTE, SSH=REMOTE-1)
 #   -h, --help              显示帮助
 #
 # 环境变量扩展 (CDP_HEADED / CDP_START_URL):
@@ -22,12 +26,15 @@
 # 示例:
 #   bash install.sh                                         # 默认 720x1280, noVNC:8080, 面板:8088
 #   bash install.sh -P mypass -r 1280x720                   # 改密码 + 横屏
+#   bash install.sh --frp -P 123456                         # 部署 + frp 公网穿透 (30208/30207)
 #   CDP_HEADED=0 bash install.sh                             # 无头模式
 #
 # 自动完成:
 #   - 检测/修复本机 chromium CDP 模式 (browser_use 依赖)
 #   - 自动探测 NAS 持久化路径 (不写死, 谁都能用)
 #   - supervisor 托管全部服务 + 开机自启 + 数据定时备份到 NAS
+#   - chromium CDP profile 持久化到 NAS (cookie/登录态不丢)
+#   - (可选) frp 内网穿透: 公网 noVNC + SSH 一键可达
 #
 # 幂等: 可重复执行, 已有配置自动跳过
 # ============================================================
@@ -53,6 +60,17 @@ CDP_PORT="${CDP_PORT:-9222}"                     # chromium CDP 调试端口 (br
 CDP_HEADED="${CDP_HEADED:-1}"                    # 1=有头模式(VNC可见,默认开) 0=无头模式(省内存)
 CDP_START_URL="${CDP_START_URL:-https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo}"  # chromium-cdp 启动页
 
+# ---------- frp 内网穿透配置 (可选, 默认关闭) ----------
+# 参考 scripts/recover-frp.sh 的线上配置, 启用后自动部署:
+#   VNC 公网端口 30208 -> 本地 8080, SSH 公网端口 30207 -> 本地 22
+ENABLE_FRP="${ENABLE_FRP:-0}"                    # 1=启用 frp 隧道 (自动部署 frpc + supervisor 托管)
+FRP_SERVER="${FRP_SERVER:-165.1.122.72}"         # frps 服务器地址
+FRP_SERVER_PORT="${FRP_SERVER_PORT:-30205}"      # frps 服务器端口
+FRP_TOKEN="${FRP_TOKEN:-7bKJ73XW7HeNymI7}"       # frps token
+FRP_REMOTE_PORT="${FRP_REMOTE_PORT:-30208}"      # 公网主端口 (VNC=REMOTE, SSH=REMOTE-1)
+FRP_SSH_REMOTE_PORT="${FRP_SSH_REMOTE_PORT:-$((FRP_REMOTE_PORT - 1))}"  # SSH 公网端口 (REMOTE-1)
+FRP_BIN_DIR="${FRP_BIN_DIR:-/home/frp}"          # frpc 二进制目录
+
 # 命令行参数解析
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -60,6 +78,10 @@ while [ $# -gt 0 ]; do
         -r|--resolution)   RESOLUTION="$2"; shift 2 ;;
         -V|--vnc-port)     VNC_PORT="$2"; shift 2 ;;
         -Q|--qwenpaw-port) QWENPAW_PORT="$2"; shift 2 ;;
+        -F|--frp)          ENABLE_FRP=1; shift ;;
+        -S|--frp-server)   FRP_SERVER="$2"; ENABLE_FRP=1; shift 2 ;;
+        -T|--frp-token)    FRP_TOKEN="$2"; ENABLE_FRP=1; shift 2 ;;
+        -R|--frp-remote-port) FRP_REMOTE_PORT="$2"; ENABLE_FRP=1; shift 2 ;;
         -h|--help)         show_help ;;
         *) red "❌ 未知参数: $1"; show_help ;;
     esac
@@ -143,16 +165,19 @@ check_cdp() {
     # chromium-cdp 启动命令 (有头/无头二选一)
     #   有头 (CDP_HEADED=1): 显示在 VNC 桌面, 能直接看到 AI 在浏览器里干什么
     #   无头 (CDP_HEADED=0): 后台运行, 省内存, 适合纯自动化不关心界面
+    #   profile 持久化到 NAS (不丢 cookie/登录态/书签), 重启自动恢复
+    CDP_PROFILE_DIR="${CDP_PROFILE_DIR:-${NAS_BASE_DIR}/browser/chromium-cdp-profile}"
+    mkdir -p "$CDP_PROFILE_DIR"
     if [ "${CDP_HEADED:-1}" = "1" ]; then
-        CDP_CMD="${CHROMIUM_BIN} --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/chromium-cdp-profile --window-size=${RESOLUTION} --window-position=0,0 --lang=zh-CN --accept-lang=zh-CN,zh ${CDP_START_URL}"
+        CDP_CMD="${CHROMIUM_BIN} --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=${CDP_PROFILE_DIR} --window-size=${RESOLUTION} --window-position=0,0 --lang=zh-CN --accept-lang=zh-CN,zh ${CDP_START_URL}"
         CDP_ENV='environment=DISPLAY=":1"'
         CDP_GUI_AUTOSTART=false   # cdp 有头已占 VNC 桌面, 不再自动起独立的 chromium-gui
     else
-        CDP_CMD="${CHROMIUM_BIN} --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/chromium-cdp-profile about:blank"
+        CDP_CMD="${CHROMIUM_BIN} --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --remote-debugging-port=${CDP_PORT} --remote-debugging-address=127.0.0.1 --user-data-dir=${CDP_PROFILE_DIR} about:blank"
         CDP_ENV=""
         CDP_GUI_AUTOSTART=true    # cdp 无头时, VNC 桌面显示独立 chromium-gui (Bing)
     fi
-    green "✅ chromium: $CHROMIUM_BIN"
+    green "✅ chromium: $CHROMIUM_BIN  profile: ${CDP_PROFILE_DIR}"
 
     cdp_ok() {
         curl -s --max-time 3 "http://127.0.0.1:${CDP_PORT}/json/version" 2>/dev/null | grep -q "webSocketDebuggerUrl"
@@ -824,6 +849,101 @@ if [ -d "$QB/working.secret" ] && [ -n "$(ls -A "$QB/working.secret" 2>/dev/null
 fi
 
 # ============================================================
+# 5.5 frp 内网穿透部署 (可选, ENABLE_FRP=1 时启用)
+# ============================================================
+install_frp() {
+    yellow "🔧 部署 frp 内网穿透 (ENABLE_FRP=1)..."
+
+    # 1. 准备 frpc 目录与二进制
+    mkdir -p "$FRP_BIN_DIR"
+    if [ ! -f "$FRP_BIN_DIR/frpc" ]; then
+        # 优先从仓库 scripts/frp-backup 复制 (已有线上二进制)
+        if [ -f "$SCRIPT_DIR/scripts/frp-backup/frpc" ]; then
+            cp "$SCRIPT_DIR/scripts/frp-backup/frpc" "$FRP_BIN_DIR/frpc"
+            yellow "  ✅ 从仓库复制 frpc"
+        elif [ -f "$SCRIPT_DIR/scripts/frpc" ]; then
+            cp "$SCRIPT_DIR/scripts/frpc" "$FRP_BIN_DIR/frpc"
+            yellow "  ✅ 从 scripts/frpc 复制"
+        else
+            # 兜底: 从 NAS 备份或 /root/.ssh_keys 恢复
+            for cand in /run/csi/mount-root/nas/*/*/chromium-QwenPaw/scripts/frp-backup/frpc \
+                        /home/frp/frpc \
+                        /root/frp/frpc; do
+                [ -f "$cand" ] && { cp "$cand" "$FRP_BIN_DIR/frpc"; yellow "  ✅ 从 $cand 复制 frpc"; break; }
+            done
+        fi
+        [ -f "$FRP_BIN_DIR/frpc" ] || { red "❌ 未找到 frpc 二进制, 请放到 scripts/frp-backup/frpc 或 /home/frp/frpc"; exit 1; }
+    else
+        yellow "  ⏭ frpc 二进制已存在, 跳过"
+    fi
+    chmod +x "$FRP_BIN_DIR/frpc"
+
+    # 2. 写 frpc.toml (VNC + SSH 隧道)
+    cat > "$FRP_BIN_DIR/frpc.toml" <<EOF
+serverAddr = "$FRP_SERVER"
+serverPort = $FRP_SERVER_PORT
+
+auth.method = "token"
+auth.token = "$FRP_TOKEN"
+
+log.to = "/var/log/frpc.log"
+log.level = "error"
+log.maxDays = 3
+
+[[proxies]]
+name = "ssh_qwenpaw"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 22
+remotePort = $FRP_SSH_REMOTE_PORT
+
+[[proxies]]
+name = "novnc_qwenpaw"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = $VNC_PORT
+remotePort = $FRP_REMOTE_PORT
+EOF
+    green "  ✅ frpc.toml 已写入 ($FRP_BIN_DIR/frpc.toml)"
+
+    # 3. supervisor 托管 frpc (避免重复进程 / 容器重建后自启)
+    SUPERVISOR_CONF="${SUPERVISOR_CONF:-/etc/supervisor/conf.d/frpc.conf}"
+    if command -v supervisorctl >/dev/null 2>&1; then
+        cat > "$SUPERVISOR_CONF" <<EOF
+[program:frpc]
+command=$FRP_BIN_DIR/frpc -c $FRP_BIN_DIR/frpc.toml
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/frpc.err.log
+stdout_logfile=/var/log/frpc.out.log
+EOF
+        supervisorctl reread >/dev/null 2>&1 || true
+        supervisorctl update >/dev/null 2>&1 || true
+        supervisorctl restart frpc >/dev/null 2>&1 || supervisorctl start frpc >/dev/null 2>&1 || true
+        green "  ✅ frpc 已由 supervisor 托管并启动"
+    else
+        # 无 supervisor, nohup 兜底
+        pkill -f "$FRP_BIN_DIR/frpc" 2>/dev/null || true
+        cd "$FRP_BIN_DIR" && setsid nohup ./frpc -c ./frpc.toml >/dev/null 2>&1 &
+        green "  ✅ frpc 已 nohup 启动"
+        cd "$SCRIPT_DIR"
+    fi
+
+    # 4. 验证
+    if ps aux | grep -q "[f]rpc -c"; then
+        green "  ✅ frpc 运行中"
+        green "  🌐 公网 noVNC: http://$FRP_SERVER:$FRP_REMOTE_PORT/vnc.html (密码 = ${VNC_PASS})"
+        green "  🌐 公网 SSH: root@$FRP_SERVER -p $FRP_SSH_REMOTE_PORT (密码 = ${VNC_PASS})"
+    else
+        red "  ❌ frpc 启动失败, 请检查 /var/log/frpc.err.log"
+    fi
+}
+
+if [ "${ENABLE_FRP:-0}" = "1" ]; then
+    install_frp
+fi
+
+# ============================================================
 # 6. 启动全部服务 + 输出
 # ============================================================
 green "🚀 启动服务..."
@@ -848,8 +968,15 @@ green ""
 green " 💾 数据持久化:"
 green "    NAS: ${NAS_BASE_DIR}"
 green "    每 ${BACKUP_INTERVAL}s 自动备份, 重启自动恢复"
+green "    chromium CDP profile: ${CDP_PROFILE_DIR:-${NAS_BASE_DIR}/browser/chromium-cdp-profile}"
 green ""
 green " 🌐 chromium CDP: ${CDP_PORT} (browser_use 用)"
+if [ "${ENABLE_FRP:-0}" = "1" ]; then
+green ""
+green " 🔗 frp 公网访问 (ENABLE_FRP=1):"
+green "    noVNC: http://${FRP_SERVER}:${FRP_REMOTE_PORT}/vnc.html"
+green "    SSH:   ssh root@${FRP_SERVER} -p ${FRP_SSH_REMOTE_PORT}"
+fi
 green "============================================================"
 echo ""
 yellow "服务状态:"
